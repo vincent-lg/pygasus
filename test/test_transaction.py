@@ -98,3 +98,54 @@ class TestTransactions(BaseTest):
         # shouldn't have changed.
         product = Product.get(id=product_id)
         self.assertEqual(product.price, 3)
+
+    def test_inner(self):
+        """Test an inner transaction."""
+        first_id = second_id = None
+        with self.db.transaction:
+            product = Product.create(name="apple", price=2)
+            first_id = product.id
+
+            # Open an inner transaction.
+            with self.db.transaction:
+                product = Product.create(name="apple", price=2)
+                second_id = product.id
+
+        # Since there has been no exception, both products should exist.
+        self.assertIsNotNone(Product.get(id=first_id))
+        self.assertIsNotNone(Product.get(id=second_id))
+
+        # Now do the same thing, raising an exception in the inner block.
+        with self.db.transaction:
+            product = Product.create(name="apple", price=2)
+            first_id = product.id
+
+            # Open an inner transaction.
+            try:
+                with self.db.transaction:
+                    product = Product.create(name="apple", price=2)
+                    second_id = product.id
+                    raise InterruptedError
+            except InterruptedError:
+                pass
+
+        # The first product should exist, the second one should not.
+        self.assertIsNotNone(Product.get(id=first_id))
+        self.assertIsNone(Product.get(id=second_id))
+
+        # Do the same with an error in the outer block.
+        try:
+            with self.db.transaction:
+                product = Product.create(name="apple", price=2)
+                first_id = product.id
+
+                with self.db.transaction:
+                    product = Product.create(name="apple", price=2)
+                    second_id = product.id
+                raise InterruptedError
+        except InterruptedError:
+            pass
+
+        # No product should exist.
+        self.assertIsNone(Product.get(id=first_id))
+        self.assertIsNone(Product.get(id=second_id))

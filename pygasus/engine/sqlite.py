@@ -29,6 +29,7 @@
 """Module containing the Sqlite3 database engine."""
 
 import datetime
+from itertools import count
 import pathlib
 import pickle
 import sqlite3
@@ -55,6 +56,8 @@ class Sqlite3Engine(BaseEngine):
         super().__init__(database)
         self.file_name = None
         self.memory = False
+        self.savepoints = {}
+        self.savepoint_id = count(1)
 
     def init(self, file_name: Union[str, pathlib.Path, None] = None,
             memory: bool = False):
@@ -304,7 +307,13 @@ class Sqlite3Engine(BaseEngine):
             transaction: the transacrion to begin.
 
         """
-        self._execute("BEGIN TRANSACTION;")
+        if transaction.parent:
+            t_id = next(self.savepoint_id)
+            savepoint = f"sp{t_id}"
+            self.savepoints[transaction] = t_id
+            self._execute(f"SAVEPOINT {savepoint};")
+        else:
+            self._execute("BEGIN TRANSACTION;")
 
     def commit_transaction(self, transaction: Transaction):
         """
@@ -314,7 +323,12 @@ class Sqlite3Engine(BaseEngine):
             transaction: the transacrion to commit.
 
         """
-        self._execute("COMMIT;")
+        if transaction.parent:
+            t_id = self.savepoints.pop(transaction)
+            savepoint = f"sp{t_id}"
+            self._execute(f"RELEASE SAVEPOINT {savepoint};")
+        else:
+            self._execute("COMMIT;")
 
     def rollback_transaction(self, transaction: Transaction):
         """
@@ -324,7 +338,12 @@ class Sqlite3Engine(BaseEngine):
             transaction: the transacrion to rollback.
 
         """
-        self._execute("ROLLBACK;")
+        if transaction.parent:
+            t_id = self.savepoints.pop(transaction)
+            savepoint = f"sp{t_id}"
+            self._execute(f"ROLLBACK TRANSACTION TO SAVEPOINT {savepoint};")
+        else:
+            self._execute("ROLLBACK;")
 
     def _execute(self, query, fields=None):
         """Execute a query."""

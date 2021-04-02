@@ -53,6 +53,7 @@ class Database:
     def __init__(self):
         self._engine = Sqlite3Engine(self)
         self._models = ()
+        self._current_transaction = None
 
     @property
     def engine(self):
@@ -79,7 +80,7 @@ class Database:
     @property
     def transaction(self):
         """Create and return a transaction."""
-        return Transaction(self)
+        return Transaction(self, parent=self._current_transaction)
 
     def bind(self, models: Optional[Sequence[Model]] = None):
         """

@@ -34,15 +34,18 @@ class Transaction:
     Class representing an inner or outer transaction.
     """
 
-    def __init__(self, database):
+    def __init__(self, database, parent=None):
         self.database = database
         self.engine = database._engine
+        self.parent = parent
 
     def __enter__(self):
+        self.database._current_transaction = self
         self.engine.begin_transaction(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.database._current_transaction = self.parent
         if exc_type:
             self.engine.rollback_transaction(self)
         else:
