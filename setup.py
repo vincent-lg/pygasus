@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pygasus",
-    version="0.1",
+    version="0.2",
     author="Vincent Le Goff",
     author_email="vincent.legoff.srs@gmail.com",
     description="A lightweight, Sqlite ORM in Python.",
