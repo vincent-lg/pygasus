@@ -37,6 +37,7 @@ from typing import Any, Dict, Optional, Type, Union
 
 from pygasus.engine.base import BaseEngine
 from pygasus.schema.field import Field
+from pygasus.schema.transaction import Transaction
 
 Model = 'pygasus.schema.model.Model'
 
@@ -87,6 +88,8 @@ class Sqlite3Engine(BaseEngine):
                 sql_file_name = str(file_name.resolve())
             self.file_name = file_name
         self.connection = sqlite3.connect(sql_file_name)
+        self.connection.isolation_level = None
+        #self.connection.set_trace_callback(print)
         self.cursor = self.connection.cursor()
 
     def close(self):
@@ -239,6 +242,7 @@ class Sqlite3Engine(BaseEngine):
         sql_fields = ", ".join(sql_fields)
         self._execute(INSERT_QUERY.format(table_name=table_name,
                 fields=sql_fields, values=values), sql_values)
+
         instance_data = {}
         for field in model._fields.values():
             value = fields.get(field)
@@ -291,6 +295,36 @@ class Sqlite3Engine(BaseEngine):
         self._execute(DELETE_QUERY.format(table_name=table_name,
                 primary=primary.name), (id_value, ))
         instance._is_deleted = True
+
+    def begin_transaction(self, transaction: Transaction):
+        """
+        Begin a transaction.
+
+        Args:
+            transaction: the transacrion to begin.
+
+        """
+        self._execute("BEGIN TRANSACTION;")
+
+    def commit_transaction(self, transaction: Transaction):
+        """
+        Commit a transaction.
+
+        Args:
+            transaction: the transacrion to commit.
+
+        """
+        self._execute("COMMIT;")
+
+    def rollback_transaction(self, transaction: Transaction):
+        """
+        Rollback a transaction.
+
+        Args:
+            transaction: the transacrion to rollback.
+
+        """
+        self._execute("ROLLBACK;")
 
     def _execute(self, query, fields=None):
         """Execute a query."""

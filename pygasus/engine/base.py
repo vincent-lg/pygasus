@@ -32,6 +32,7 @@ from abc import ABCMeta, abstractmethod
 from typing import Any, Dict, Optional, Type
 
 from pygasus.schema.field import Field
+from pygasus.schema.transaction import Transaction
 
 Model = 'pygasus.schema.model.Model'
 
@@ -161,5 +162,35 @@ class BaseEngine(metaclass=ABCMeta):
 
         Args:
             instance (Model): the model instance to be deleted.
+
+        """
+
+    @abstractmethod
+    def begin_transaction(self, transaction: Transaction):
+        """
+        Begin a transaction.
+
+        Args:
+            transaction: the transacrion to begin.
+
+        """
+
+    @abstractmethod
+    def commit_transaction(self, transaction: Transaction):
+        """
+        Commit a transaction.
+
+        Args:
+            transaction: the transacrion to commit.
+
+        """
+
+    @abstractmethod
+    def rollback_transaction(self, transaction: Transaction):
+        """
+        Rollback a transaction.
+
+        Args:
+            transaction: the transacrion to rollback.
 
         """
