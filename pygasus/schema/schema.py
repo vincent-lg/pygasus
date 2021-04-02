@@ -99,3 +99,9 @@ class ModelSchema:
             fields[field] = value
 
         return fields
+
+    @staticmethod
+    def get_fields(instance):
+        """Get all fields from a model instance."""
+        return {field: getattr(instance, field.name)
+                for field in instance._fields.values()}

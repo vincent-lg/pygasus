@@ -32,6 +32,7 @@ from typing import Optional, Sequence, Type, Union
 
 from pygasus.engine.base import BaseEngine
 from pygasus.engine.sqlite import Sqlite3Engine
+from pygasus.schema.mapper import IDMapper
 from pygasus.schema.model import Model, MODELS
 from pygasus.schema.transaction import Transaction
 
@@ -54,6 +55,7 @@ class Database:
         self._engine = Sqlite3Engine(self)
         self._models = ()
         self._current_transaction = None
+        self.id_mapper = IDMapper(self)
 
     @property
     def engine(self):

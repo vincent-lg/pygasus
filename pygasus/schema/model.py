@@ -117,6 +117,26 @@ class MetaModel(type):
         fields = self._schema.extract(args, kwargs, operation=Operation.PORTION)
         return self._engine.get_instance(self, fields)
 
+    def update_instance(self, instance, field, value):
+        """
+        Update the value of a given field.
+
+        Args:
+            instance (Model): the model instance.
+            field (Field): the field to update.
+            value (Any): the new field value.
+
+        """
+        transaction = instance._engine.database._current_transaction
+        if transaction:
+            if instance in transaction.objects:
+                return
+
+            attrs = {field.name: getattr(instance, field.name)
+                    for field in instance._fields.values()}
+            transaction.objects[instance] = attrs
+        return self._engine.update_instance(instance, field, value)
+
 
 class Model(metaclass=MetaModel):
 
@@ -155,7 +175,7 @@ class Model(metaclass=MetaModel):
                 raise SetByDatabase(type(self), field)
 
             field.accept(value)
-            self._engine.update_instance(self, field, value)
+            type(self).update_instance(self, field, value)
         else:
             super().__setattr__(key, value)
 

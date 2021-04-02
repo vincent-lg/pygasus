@@ -26,34 +26,63 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the Transaction class, to handle database transactions."""
+"""Module containing the basic IDMapper."""
 
-class Transaction:
+class IDMapper:
 
-    """
-    Class representing an inner or outer transaction.
-    """
+    """Basic ID mapper."""
 
-    def __init__(self, database, parent=None):
+    def __init__(self, database):
         self.database = database
-        self.engine = database._engine
-        self.parent = parent
         self.objects = {}
 
-    def __enter__(self):
-        self.database._current_transaction = self
-        self.engine.begin_transaction(self)
-        return self
+    def get(self, model, primary):
+        """
+        Get an object from the ID mapper, or None.
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.database._current_transaction = self.parent
-        if exc_type:
-            # Restore transaction objects as they were.
-            for obj, attrs in self.objects.items():
-                obj._has_init = False
-                for key, value in attrs.items():
-                    setattr(obj, key, value)
-                obj._has_init = True
-            self.engine.rollback_transaction(self)
-        else:
-            self.engine.commit_transaction(self)
+        Args:
+            model (Model): the model class.
+            primary (dict): the primary fields.
+
+        Returns:
+            model (Model instance or None).
+
+        """
+        fields = tuple(primary.values())
+        return self.objects.get(model, {}).get(fields)
+
+    def set(self, model, primary, instance):
+        """
+        Set the object in the ID mapper.
+
+        Args:
+            model (Model): the model class.
+            primary (dict): the primary fields.
+            instance (Model): the model instance.
+
+        """
+        if self.get(model, primary):
+            return
+
+        fields = tuple(primary.values())
+        objects = self.objects.get(model)
+        if objects is None:
+            objects = {}
+            self.objects[model] = objects
+        objects[fields] = instance
+
+    def delete(self, model, primary):
+        """
+        Delete the specified model instance from the ID mapper.
+
+        Args:
+            model (Model): the model subclass.
+            primary (dict): the primary field dictionary.
+
+        """
+        fields = tuple(primary.values())
+        objects = self.objects.get(model)
+        if objects is None:
+            return
+
+        return objects.pop(fields)

@@ -209,6 +209,7 @@ class Sqlite3Engine(BaseEngine):
 
         row = rows[0]
         instance_data = {}
+        primary = {}
         for i, field in enumerate(model._fields.values()):
             value = row[i]
 
@@ -219,8 +220,23 @@ class Sqlite3Engine(BaseEngine):
 
             instance_data[field.name] = value
 
-        # Create an instance object.
-        return model(**instance_data)
+            if field.primary_key:
+                primary[field.name] = value
+
+        # If there's an ID mapper, ask it to retrieve the object.
+        mapper = self.database.id_mapper
+        if mapper:
+            obj = mapper.get(model, primary)
+            if obj is not None:
+                return obj
+
+        # Create a model instance.
+        instance = model(**instance_data)
+
+        if mapper:
+            mapper.set(model, primary, instance)
+
+        return instance
 
     def create_instance(self, model: Type[Model], fields: Dict[Field, Any]):
         """
@@ -247,6 +263,7 @@ class Sqlite3Engine(BaseEngine):
                 fields=sql_fields, values=values), sql_values)
 
         instance_data = {}
+        primary = {}
         for field in model._fields.values():
             value = fields.get(field)
             if field.set_by_database:
@@ -254,8 +271,18 @@ class Sqlite3Engine(BaseEngine):
 
             instance_data[field.name] = value
 
+            if field.primary_key:
+                primary[field] = value
+
         # Create an instance object.
-        return model(**instance_data)
+        instance = model(**instance_data)
+
+        # If there's an ID mapper, ask it to retrieve the object.
+        mapper = self.database.id_mapper
+        if mapper:
+            mapper.set(model, primary, instance)
+
+        return instance
 
     def update_instance(self, instance: Model, field: Field, value: Any):
         """
@@ -298,6 +325,15 @@ class Sqlite3Engine(BaseEngine):
         self._execute(DELETE_QUERY.format(table_name=table_name,
                 primary=primary.name), (id_value, ))
         instance._is_deleted = True
+
+        # If there's an ID mapper, remove the object.
+        mapper = self.database.id_mapper
+        if mapper:
+            fields = instance._schema.get_fields(instance)
+            primary = {field: value
+                    for field, value in fields.items()
+                    if field.primary_key}
+            mapper.delete(model, primary)
 
     def begin_transaction(self, transaction: Transaction):
         """
