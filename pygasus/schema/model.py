@@ -117,6 +117,13 @@ class MetaModel(type):
         fields = self._schema.extract(args, kwargs, operation=Operation.PORTION)
         return self._engine.get_instance(self, fields)
 
+    def select(self, *args, **kwargs):
+        """
+        Return the matching instances.
+
+        """
+        return self._engine.select(self, args, kwargs)
+
     def update_instance(self, instance, field, value):
         """
         Update the value of a given field.

@@ -37,6 +37,7 @@ from textwrap import dedent
 from typing import Any, Dict, Optional, Type, Union
 
 from pygasus.engine.base import BaseEngine
+from pygasus.engine.sqlite.operators import QueryWalker
 from pygasus.schema.field import Field
 from pygasus.schema.transaction import Transaction
 
@@ -92,6 +93,7 @@ class Sqlite3Engine(BaseEngine):
             self.file_name = file_name
         self.connection = sqlite3.connect(sql_file_name)
         self.connection.isolation_level = None
+        self.connection.create_function("pylower", 1, str.lower)
         #self.connection.set_trace_callback(print)
         self.cursor = self.connection.cursor()
 
@@ -163,6 +165,66 @@ class Sqlite3Engine(BaseEngine):
 
         """
         return None
+
+    def select(self, model, args, kwargs):
+        """
+        Select the matching objects.
+
+        Positional arguments should contain query filetrs.
+
+        """
+        walker = QueryWalker(args[0])
+        walker.walk()
+        where = walker.sql_statement
+        sql_values = walker.sql_values
+        table_name = model._alt_name or model.__name__.lower()
+
+        # Determine the field of the queries.
+        fields = []
+        for field in model._fields.values():
+            fields.append(field.name)
+        fields = ", ".join(fields)
+
+        # Send the query.
+        rows = self._execute(SELECT_QUERY.format(table_name=table_name,
+                fields=fields, filters=where), sql_values)
+
+        # Loop over the rows.
+        rows = self.cursor.fetchall()
+        results = []
+        for row in rows:
+            instance_data = {}
+            primary = {}
+            for i, field in enumerate(model._fields.values()):
+                value = row[i]
+
+                # Convert this SQL value to Python if necessary.
+                if isinstance(value, bytes) and field.field_type is not bytes:
+                    # Unpickle the data.
+                    value = pickle.loads(value)
+
+                instance_data[field.name] = value
+
+                if field.primary_key:
+                    primary[field.name] = value
+
+            # If there's an ID mapper, ask it to retrieve the object.
+            mapper = self.database.id_mapper
+            if mapper:
+                obj = mapper.get(model, primary)
+                if obj is not None:
+                    results.append(obj)
+                    continue
+
+            # Create a model instance.
+            instance = model(**instance_data)
+
+            if mapper:
+                mapper.set(model, primary, instance)
+
+            results.append(instance)
+
+        return results
 
     def get_instance(self, model: Type[Model],
             fields: Dict[Field, Any]) -> Optional[Model]:

@@ -26,54 +26,31 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the field class, defining database columns."""
+"""Module containing the list of allowed operations."""
 
-from typing import Any
+from enum import Enum
 
-from pygasus.query.operation import Unary
-from pygasus.query.query import Query
+class Binary(Enum):
 
-_NOT_SET = object()
+    """Enumeration containing binary operators."""
 
-class Field(Query):
+    EQUAL = "equality, Python =="
+    DIFFERENT = "different than, Python !="
+    LOWER_THAN = "lower than, Python <"
+    LOWER_OR_EQUAL = "lower or equal to, Python <="
+    GREATER_THAN = "lower than, Python <"
+    GREATER_OR_EQUAL = "lower or equal to, Python <="
 
-    """A field, to represent a database column."""
+class Unary(Enum):
 
-    def __init__(self, field_type, primary_key=False,
-            name=None, default=_NOT_SET):
-        super().__init__(Unary.RETRIEVE)
-        self.field_type = field_type
-        self.primary_key = primary_key
-        self.name = name
-        self.default = default
+    """Enumeration containing unary operators."""
 
-    def __hash__(self):
-        return hash(self.name)
+    RETRIEVE = "simply retrieve a field"
 
-    def __repr__(self):
-        return f"<Field {self.name!r}>"
+class Function(Enum):
 
-    def __str__(self):
-        text = f"{self.name!r} of type {self.field_type.__name__}"
-        if self.primary_key:
-            text += " (primary key)"
+    """Enumeration containing functions."""
 
-        return text
-
-    @property
-    def set_by_database(self):
-        """This field is to be set by the database only."""
-        return self.field_type is int and self.primary_key
-
-    @property
-    def has_default(self):
-        """Has this field got a default value?"""
-        return self.default is not _NOT_SET
-
-    def accept(self, value: Any) -> bool:
-        """Return whether this value is accepted."""
-        accepted = self.field_type
-        if accepted in (int, float, str, bytes):
-            return isinstance(value, accepted)
-
-        return True
+    LOWER = "string lowercase, Python str.lower"
+    UPPER = "string uppercase, Python str.upper"
+    CONTAINS = "contains funciton, do not use the in operator in Python"

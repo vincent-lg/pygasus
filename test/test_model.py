@@ -33,14 +33,13 @@ from test.base import BaseTest
 from pygasus import Field, Model
 from pygasus.exceptions import *
 
-class Person(Model):
+class Book(Model):
 
-    """A simple person."""
+    """A simple book model."""
 
-    first = Field(str)
-    last = Field(str)
-    age = Field(int)
-    height = Field(float)
+    title = Field(str)
+    author = Field(str)
+    year = Field(int)
 
 class TestModels(BaseTest):
 
@@ -48,54 +47,54 @@ class TestModels(BaseTest):
 
     def setUp(self):
         super().setUp()
-        self.db.bind((Person, ))
+        self.db.bind((Book, ))
 
     def test_create(self):
         """Create several instances."""
-        # Create a person with all fields.
-        person = Person.create(first="Vincent", last="Le Goff", age=31, height=1.72)
-        self.assertEqual(person.first, "Vincent")
-        self.assertEqual(person.last, "Le Goff")
-        self.assertEqual(person.age, 31)
-        self.assertEqual(person.height, 1.72)
+        # Create a book with all fields.
+        book = Book.create(title="A Voyage in a Balloon",
+                author="Jules Verne", year=1851)
+        self.assertEqual(book.title, "A Voyage in a Balloon")
+        self.assertEqual(book.author, "Jules Verne")
+        self.assertEqual(book.year, 1851)
 
-        # Check that this person has a valid ID.
-        self.assertIsNotNone(person.id)
+        # Check that this book has a valid ID.
+        self.assertIsNotNone(book.id)
 
-        # Creating a person with missing fields should raise an error.
+        # Creating a book with missing fields should raise an error.
         with self.assertRaises(MissingArgument):
-            Person.create(first="Vincent")
+            Book.create(title="Something")
 
-        # Creating a person with an ID shouldn't be allowed.
+        # Creating a book with an ID shouldn't be allowed.
         with self.assertRaises(ForbiddenArgument):
-            Person.create(id=4, first="Vincent", last="Le Goff",
-                    age=31, height=1.72)
+            Book.create(id=4, title="A Voyage in a Balloon",
+                    author="Jules Verne", year=1851)
 
     def test_get(self):
         """Test to get a model."""
-        person = Person.create(first="Vincent", last="Le Goff", age=31,
-                height=1.72)
-        self.assertIsNotNone(Person.get(id=person.id))
-        self.assertIsNone(Person.get(id=person.id + 1))
+        book = Book.create(title="A Voyage in a Balloon",
+                author="Jules Verne", year=1851)
+        self.assertIsNotNone(Book.get(id=book.id))
+        self.assertIsNone(Book.get(id=book.id + 1))
 
     def test_update(self):
         """Test to update a model."""
-        person = Person.create(first="Vincent", last="Le Goff", age=31,
-                height=1.72)
-        person.age = 8
-        self.assertEqual(person.age, 8)
+        book = Book.create(title="A Voyage in a Balloon",
+                author="Jules Verne", year=1851)
+        book.year = 1852
+        self.assertEqual(book.year, 1852)
 
         # Check that the same result is obtained through getting the object.
-        self.assertEqual(Person.get(id=person.id).age, 8)
+        self.assertEqual(Book.get(id=book.id).year, 1852)
 
         # But editing the ID raises an error.
         with self.assertRaises(SetByDatabase):
-            person.id = 32
+            book.id = 32
 
     def test_delete(self):
         """Create and delete a model."""
-        person = Person.create(first="Vincent", last="Le Goff", age=31,
-                height=1.72)
-        self.assertIsNotNone(Person.get(id=person.id))
-        person.delete()
-        self.assertIsNone(Person.get(id=person.id))
+        book = Book.create(title="A Voyage in a Balloon",
+                author="Jules Verne", year=1851)
+        self.assertIsNotNone(Book.get(id=book.id))
+        book.delete()
+        self.assertIsNone(Book.get(id=book.id))
