@@ -33,15 +33,18 @@ from itertools import count
 import pathlib
 import pickle
 import sqlite3
-from textwrap import dedent
 from typing import Any, Dict, Optional, Type, Union
 
 from pygasus.engine.base import BaseEngine
+from pygasus.engine.generic.columns import IntegerColumn
+from pygasus.engine.generic.columns.base import BaseColumn
+from pygasus.engine.generic.table import GenericTable
+from pygasus.engine.sqlite.constants import (
+        CREATE_MIGRATION_TABLE_QUERY, CREATE_TABLE_QUERY,
+        DELETE_QUERY, INSERT_QUERY, SELECT_QUERY, UPDATE_QUERY, SQL_TYPES)
 from pygasus.engine.sqlite.operators import QueryWalker
 from pygasus.schema.field import Field
 from pygasus.schema.transaction import Transaction
-
-Model = 'pygasus.schema.model.Model'
 
 class Sqlite3Engine(BaseEngine):
 
@@ -117,285 +120,199 @@ class Sqlite3Engine(BaseEngine):
         table already exists.
 
         """
-        self.cursor.execute(CREATE_MIGRATION_TABLE)
+        self.cursor.execute(CREATE_MIGRATION_TABLE_QUERY)
 
-    def create_table_for(self, model: Type[Model]):
+    def create_table_for(self, table: GenericTable):
         """
-        Create a table for this model.
+        Create a database table for this generic table.
 
         Notice that this method is called each time the model is
-        bound, therefore this method should do nothing if the table
+        loaded, therefore this method should do nothing if the table
         already exists.
 
         Args:
-            model (subclass of Model): the model.
+            table (GenericTable): the generic table.
 
         """
-        table_name = model._alt_name or model.__name__.lower()
-        sql_fields = []
-        for field in model._fields.values():
-            sql_type = SQL_TYPES.get(field.field_type, "BLOB")
-            sql_field = f"{field.name} {sql_type}"
-            if field.primary_key:
-                sql_field += " PRIMARY KEY"
-                if field.field_type is int:
+        sql_columns = []
+        for column in table.columns.values():
+            sql_type = SQL_TYPES.get(type(column), "BLOB")
+            sql_column = f"{column.name} {sql_type}"
+            if column.primary_key:
+                sql_column += " PRIMARY KEY"
+                if isinstance(column, IntegerColumn):
                     # Autoincrement by default on primary key ints.
-                    sql_field += " AUTOINCREMENT"
+                    sql_column += " AUTOINCREMENT"
 
-            if not field.has_default:
-                sql_field += " NOT NULL"
+            if not column.has_default:
+                sql_column += " NOT NULL"
 
-            sql_fields.append(sql_field)
+            sql_columns.append(sql_column)
 
         # Send the create query.
-        fields = ", ".join(sql_fields)
-        self.cursor.execute(CREATE_TABLE.format(table_name=table_name,
-                fields=fields))
+        columns = ", ".join(sql_columns)
+        self.cursor.execute(CREATE_TABLE_QUERY.format(table_name=table.name,
+                columns=columns))
 
-    def get_saved_schema_for(self, model: Type[Model]):
+    def get_saved_schema_for(self, table: GenericTable):
         """
-        Return the saved schema for this model, if any.
+        Return the saved schema for this table, if any.
 
         Returning `None` will lead to the database calling `create_table_for`.
         If migrations are supported for this engine, the schema should
-        be returned (the list of fields stored in the last migration).
+        be returned (the list of columns stored in the last migration).
 
         Args:
-            model (subclass of Model): the model.
+            table (GenericTable): the generic table.
 
         """
         return None
 
-    def select(self, model, args, kwargs):
+    def select_rows(self, table, queries, filters):
         """
-        Select the matching objects.
+        Return a query object filtered according to the specified arguments.
 
-        Positional arguments should contain query filetrs.
+        Positional arguments should contain query filters, like
+        `Person.name == "Vincent"`.  Keyword arguments should contain
+        direct matches tested on equality, like `first_name="Vincent`).
+
+        Hence, here are some examples of ways to call this method:
+
+            engine.select_row(Person.first_name == "Vincent")
+            engine.select_row(Person.age > 21, Person.name.lower() == "lucy")
+            engine.select_row(name="Vincent")
+
+        Returns:
+            The list of rows matching the specified queries.
 
         """
-        walker = QueryWalker(args[0])
+        walker = QueryWalker(queries[0])
         walker.walk()
         where = walker.sql_statement
         sql_values = walker.sql_values
-        table_name = model._alt_name or model.__name__.lower()
-
-        # Determine the field of the queries.
-        fields = []
-        for field in model._fields.values():
-            fields.append(field.name)
-        fields = ", ".join(fields)
+        columns = self._get_sql_columns(table, sep=",")
 
         # Send the query.
-        rows = self._execute(SELECT_QUERY.format(table_name=table_name,
-                fields=fields, filters=where), sql_values)
+        self._execute(SELECT_QUERY.format(table_name=table.name,
+                columns=columns, filters=where), sql_values)
 
-        # Loop over the rows.
+        # Return the rows.
         rows = self.cursor.fetchall()
-        results = []
-        for row in rows:
-            instance_data = {}
-            primary = {}
-            for i, field in enumerate(model._fields.values()):
-                value = row[i]
+        return [self._get_dict_of_values(table, row) for row in rows]
 
-                # Convert this SQL value to Python if necessary.
-                if isinstance(value, bytes) and field.field_type is not bytes:
-                    # Unpickle the data.
-                    value = pickle.loads(value)
-
-                instance_data[field.name] = value
-
-                if field.primary_key:
-                    primary[field.name] = value
-
-            # If there's an ID mapper, ask it to retrieve the object.
-            mapper = self.database.id_mapper
-            if mapper:
-                obj = mapper.get(model, primary)
-                if obj is not None:
-                    results.append(obj)
-                    continue
-
-            # Create a model instance.
-            instance = model(**instance_data)
-
-            if mapper:
-                mapper.set(model, primary, instance)
-
-            results.append(instance)
-
-        return results
-
-    def get_instance(self, model: Type[Model],
-            fields: Dict[Field, Any]) -> Optional[Model]:
+    def get_row(self, table: GenericTable,
+            columns: Dict[BaseColumn, Any]) -> Optional[Dict[str, Any]]:
         """
-        Get, if possible, an instance with the specified fields.
+        Get, if possible, a row with the specified columns.
 
-        If more than one instance would match the specified fields,
+        If more than one row would match the specified columns,
         `None` is returned.  If no match is found, `None` is also returned.
         For greater precision, use `select`.
 
         Args:
-            model (subclass of Model): the model class.
-            fields (dict): the field dictionary, containing, as keys,
-                    field objects, ans as values, whatever value
+            table (GenericTable): the generic table.
+            columns (dict): the column dictionary, containing, as keys,
+                    column objects, and as values, whatever value
                     (of whatever type) has been set by the user.
 
         Returns:
-            instance (Model or None): the instance matching these fields.
+            row (dict or None): the row columns as a dict.
 
         """
-        table_name = model._alt_name or model.__name__.lower()
-        sql_fields = []
+        sql_filters = []
         sql_values = []
-        for field, value in fields.items():
-            sql_field = f"{field.name}=?"
-            sql_fields.append(sql_field)
+        for column, value in columns.items():
+            sql_filters.append(f"{column.name}=?")
             sql_values.append(value)
-
-        # Determine the field of the queries.
-        fields = []
-        for field in model._fields.values():
-            fields.append(field.name)
-        fields = ", ".join(fields)
+        columns = self._get_sql_columns(table, sep=",")
 
         # Send the query.
-        filters = " AND ".join(sql_fields)
-        rows = self._execute(SELECT_QUERY.format(table_name=table_name,
-                fields=fields, filters=filters), sql_values)
-
-        # Loop over the rows.
+        filters = " AND ".join(sql_filters)
+        rows = self._execute(SELECT_QUERY.format(table_name=table.name,
+                columns=columns, filters=filters), sql_values)
         rows = self.cursor.fetchall()
         if len(rows) == 0 or len(rows) < 1:
             return None
 
-        row = rows[0]
-        instance_data = {}
-        primary = {}
-        for i, field in enumerate(model._fields.values()):
-            value = row[i]
+        return self._get_dict_of_values(table, rows[0])
 
-            # Convert this SQL value to Python if necessary.
-            if isinstance(value, bytes) and field.field_type is not bytes:
-                # Unpickle the data.
-                value = pickle.loads(value)
-
-            instance_data[field.name] = value
-
-            if field.primary_key:
-                primary[field.name] = value
-
-        # If there's an ID mapper, ask it to retrieve the object.
-        mapper = self.database.id_mapper
-        if mapper:
-            obj = mapper.get(model, primary)
-            if obj is not None:
-                return obj
-
-        # Create a model instance.
-        instance = model(**instance_data)
-
-        if mapper:
-            mapper.set(model, primary, instance)
-
-        return instance
-
-    def create_instance(self, model: Type[Model], fields: Dict[Field, Any]):
+    def insert_row(self, table: GenericTable,
+            columns: Dict[BaseColumn, Any]) -> Dict[str, Any]:
         """
-        Create and update a model's instance fields.
+        Insert a row in the database.
 
         Args:
-            instance (Model): the model to be populated.
-            fields (dict): the dictionary or fields.  This should contain
-                    field objects as keys and their values (can be
+            table (GenericTable): the generic table.
+            columns (dict): the dictionary of columns.  This should contain
+                    column objects as keys and their values (can be
                     a default value).
 
         """
-        table_name = model._alt_name or model.__name__.lower()
-        sql_fields = []
+        sql_columns = []
         sql_values = []
-        for field, value in fields.items():
-            sql_fields.append(field.name)
+        for column, value in columns.items():
+            sql_columns.append(column.name)
             sql_values.append(value)
 
         # Send the query.
-        values = ", ".join(["?"] * len(fields))
-        sql_fields = ", ".join(sql_fields)
-        self._execute(INSERT_QUERY.format(table_name=table_name,
-                fields=sql_fields, values=values), sql_values)
+        values = ", ".join(["?"] * len(columns))
+        sql_columns = ", ".join(sql_columns)
+        self._execute(INSERT_QUERY.format(table_name=table.name,
+                columns=sql_columns, values=values), sql_values)
 
-        instance_data = {}
-        primary = {}
-        for field in model._fields.values():
-            value = fields.get(field)
-            if field.set_by_database:
+        data = {}
+        for column in table.columns.values():
+            value = columns.get(column)
+            if column.set_by_database:
                 value = self.cursor.lastrowid
 
-            instance_data[field.name] = value
+            data[column.name] = value
 
-            if field.primary_key:
-                primary[field] = value
+        return data
 
-        # Create an instance object.
-        instance = model(**instance_data)
-
-        # If there's an ID mapper, ask it to retrieve the object.
-        mapper = self.database.id_mapper
-        if mapper:
-            mapper.set(model, primary, instance)
-
-        return instance
-
-    def update_instance(self, instance: Model, field: Field, value: Any):
+    def update_row(self, table: GenericTable, primary_keys: Dict[str, Any],
+            column: BaseColumn, value: Any):
         """
-        If possible, update the specific instance's field.
+        If possible, update the specified row's field.
 
         Args:
-            instance (Model): the model to modify.
-            field (Field): the field to be applied.
-            value (Any): the field's new value.
+            table (GenericTable): the generic table.
+            primary_keys (dict): the dictionary of primary keys.
+            column (BaseColumn): the column to update.
+            value (Any): the column's new value.
 
         This value is supposed to have been filtered and allowed by the
-        instance.
+        model layer.
 
         """
-        # Get the primary key field.
-        model = type(instance)
-        table_name = model._alt_name or model.__name__.lower()
-        primary = instance._schema.primary_key
-        id_value = getattr(instance, primary.name)
-        sql_values = (value, id_value)
-        self._execute(UPDATE_QUERY.format(table_name=table_name,
-                primary=primary.name, field=field.name), sql_values)
-        instance._has_init = False
-        setattr(instance, field.name, value)
-        instance._has_init = True
+        sql_filters = []
+        sql_values = [value]
+        for key, value in primary_keys.items():
+            sql_filters.append(f"{key}=?")
+            sql_values.append(value)
 
-    def delete_instance(self, instance: Model):
+        sql_filters = " AND ".join(sql_filters)
+        self._execute(UPDATE_QUERY.format(table_name=table.name,
+                filters=sql_filters, column=column.name), sql_values)
+
+    def delete_row(self, table: GenericTable, primary_keys: Dict[str, Any]):
         """
-        Delete the specified instance from the database.
+        Delete the specified row from the database.
 
         Args:
-            instance (Model): the model instance to be deleted.
+            table (GenericTable): the generic table.
+            primary_keys (dict): the dictionary of primary keys.
 
         """
-        # Get the primary key field.
-        model = type(instance)
-        table_name = model._alt_name or model.__name__.lower()
-        primary = instance._schema.primary_key
-        id_value = getattr(instance, primary.name)
-        self._execute(DELETE_QUERY.format(table_name=table_name,
-                primary=primary.name), (id_value, ))
-        instance._is_deleted = True
+        sql_filters = []
+        sql_values = []
+        for key, value in primary_keys.items():
+            sql_filters.append(f"{key}=?")
+            sql_values.append(value)
 
-        # If there's an ID mapper, remove the object.
-        mapper = self.database.id_mapper
-        if mapper:
-            fields = instance._schema.get_fields(instance)
-            primary = {field: value
-                    for field, value in fields.items()
-                    if field.primary_key}
-            mapper.delete(model, primary)
+        sql_filters = " AND ".join(sql_filters)
+        self._execute(DELETE_QUERY.format(table_name=table.name,
+                filters=sql_filters), sql_values)
 
     def begin_transaction(self, transaction: Transaction):
         """
@@ -448,50 +365,21 @@ class Sqlite3Engine(BaseEngine):
         fields = fields if fields is not None else ()
         return self.cursor.execute(query, fields)
 
+    def _get_sql_columns(self, table: GenericTable, sep=" ") -> str:
+        """
+        Return the SQL statement containing column names.
 
-## Constants
-SQL_TYPES = {
-        int: "INTEGER",
-        float: "REAL",
-        str: "TEXT",
-        bytes: "BLOB",
-        datetime.datetime: "TIMESTAMP",
-        datetime.date: "DATE",
-}
+        Args:
+            sep (str): the separator to place between columns.
 
-# Database queries
-CREATE_MIGRATION_TABLE = dedent("""
-    CREATE TABLE IF NOT EXISTS pygasus_migration (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        table_name TEXT UNIQUE NOT NULL,
-        last_updated TIMESTAMP NOT NULL,
-        schema BLOB NOT NULL
-    );
-""".strip("\n"))
+        """
+        return sep.join(list(table.columns.keys()))
 
-CREATE_TABLE = dedent("""
-    CREATE TABLE IF NOT EXISTS {table_name} (
-        {fields}
-    );
-""".strip("\n"))
+    def _get_dict_of_values(self, table: GenericTable, row: tuple) -> dict:
+        """Get and return the dictionary of values for this table."""
+        columns = table.columns.keys()
+        attrs = {}
+        for column, value in zip(columns, row):
+            attrs[column] = value
 
-SELECT_QUERY = dedent("""
-    SELECT {fields} FROM {table_name}
-    WHERE {filters};
-""".strip("\n"))
-
-INSERT_QUERY = dedent("""
-    INSERT INTO {table_name} ({fields})
-    VALUES ({values});
-""".strip("\n"))
-
-UPDATE_QUERY = dedent("""
-    UPDATE {table_name}
-    SET {field}=?
-    WHERE {primary}=?
-""".strip("\n"))
-
-DELETE_QUERY = dedent("""
-    DELETE FROM {table_name}
-    WHERE {primary}=?
-""".strip("\n"))
+        return attrs

@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, LE GOFF Vincent
+# Copyright (c) 2021, LE GOFF Vincent
 # All rights reserved.
 
 # Redistribution and use in source and binary forms, with or without
@@ -26,60 +26,57 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the basic IDMapper."""
+"""Constants for the Sqlite3Engine database engine."""
 
-class IDMapper:
+from textwrap import dedent
 
-    """Basic ID mapper."""
+from pygasus.engine.generic.columns import (
+        BlobColumn, DateColumn, IntegerColumn,
+        RealColumn, TextColumn, TimestampColumn)
 
-    def __init__(self, database):
-        self.database = database
-        self.objects = {}
+## Column types:
+SQL_TYPES = {
+        BlobColumn: "BLOB",
+        DateColumn: "DATE",
+        IntegerColumn: "INTEGER",
+        RealColumn: "REAL",
+        TextColumn: "TEXT",
+        TimestampColumn: "TIMESTAMP",
+}
 
-    def get(self, model, primary):
-        """
-        Get an object from the ID mapper, or None.
+## SQL queries:
+CREATE_MIGRATION_TABLE_QUERY = dedent("""
+    CREATE TABLE IF NOT EXISTS pygasus_migration (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT UNIQUE NOT NULL,
+        last_updated TIMESTAMP NOT NULL,
+        schema BLOB NOT NULL
+    );
+""".strip("\n"))
 
-        Args:
-            model (Model): the model class.
-            primary (tuple): the primary fields.
+CREATE_TABLE_QUERY = dedent("""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        {columns}
+    );
+""".strip("\n"))
 
-        Returns:
-            model (Model instance or None).
+SELECT_QUERY = dedent("""
+    SELECT {columns} FROM {table_name}
+    WHERE {filters};
+""".strip("\n"))
 
-        """
-        return self.objects.get(model, {}).get(primary)
+INSERT_QUERY = dedent("""
+    INSERT INTO {table_name} ({columns})
+    VALUES ({values});
+""".strip("\n"))
 
-    def set(self, model, primary, instance):
-        """
-        Set the object in the ID mapper.
+UPDATE_QUERY = dedent("""
+    UPDATE {table_name}
+    SET {column}=?
+    WHERE {filters}
+""".strip("\n"))
 
-        Args:
-            model (Model): the model class.
-            primary (tuple): the primary fields.
-            instance (Model): the model instance.
-
-        """
-        if self.get(model, primary):
-            return
-
-        objects = self.objects.get(model)
-        if objects is None:
-            objects = {}
-            self.objects[model] = objects
-        objects[primary] = instance
-
-    def delete(self, model, primary):
-        """
-        Delete the specified model instance from the ID mapper.
-
-        Args:
-            model (Model): the model subclass.
-            primary (tuple): the primary field dictionary.
-
-        """
-        objects = self.objects.get(model)
-        if objects is None:
-            return
-
-        return objects.pop(primary)
+DELETE_QUERY = dedent("""
+    DELETE FROM {table_name}
+    WHERE {filters}
+""".strip("\n"))

@@ -26,60 +26,22 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the basic IDMapper."""
+"""Module containing the BaseColumn class."""
 
-class IDMapper:
+class BaseColumn:
 
-    """Basic ID mapper."""
+    """
+    Abstract class for generic columns, in a generic table.
 
-    def __init__(self, database):
-        self.database = database
-        self.objects = {}
+    Generic coluns are linked to a model field, but they're closer
+    to the database in design.
 
-    def get(self, model, primary):
-        """
-        Get an object from the ID mapper, or None.
+    """
 
-        Args:
-            model (Model): the model class.
-            primary (tuple): the primary fields.
-
-        Returns:
-            model (Model instance or None).
-
-        """
-        return self.objects.get(model, {}).get(primary)
-
-    def set(self, model, primary, instance):
-        """
-        Set the object in the ID mapper.
-
-        Args:
-            model (Model): the model class.
-            primary (tuple): the primary fields.
-            instance (Model): the model instance.
-
-        """
-        if self.get(model, primary):
-            return
-
-        objects = self.objects.get(model)
-        if objects is None:
-            objects = {}
-            self.objects[model] = objects
-        objects[primary] = instance
-
-    def delete(self, model, primary):
-        """
-        Delete the specified model instance from the ID mapper.
-
-        Args:
-            model (Model): the model subclass.
-            primary (tuple): the primary field dictionary.
-
-        """
-        objects = self.objects.get(model)
-        if objects is None:
-            return
-
-        return objects.pop(primary)
+    def __init__(self, field, table):
+        self.table = table
+        self.name = field.name
+        self.primary_key = field.primary_key
+        self.default = field.default
+        self.has_default = field.has_default
+        self.set_by_database = field.set_by_database

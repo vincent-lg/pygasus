@@ -28,7 +28,7 @@
 
 """Base class for all models."""
 
-from typing import Dict, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 from pygasus.exceptions import SetByDatabase
 from pygasus.schema.field import Field
@@ -47,6 +47,16 @@ class MetaModel(type):
             MODELS.add(cls)
             cls._fields = MetaModel.get_fields(cls)
         return cls
+
+    def _primary_values_from_dict(self, data: Dict[str, Any]) -> tuple:
+        """Return a tuple of primary fields."""
+        primary = []
+        for key, field in self._fields.items():
+            if field.primary_key:
+                value = data[key]
+                primary.append(value)
+
+        return tuple(primary)
 
     @staticmethod
     def get_fields(model: Type["Model"]) -> Dict[str, Field]:
@@ -98,7 +108,7 @@ class MetaModel(type):
     def create(self, *args, **kwargs):
         """Create and return a model instance."""
         fields = self._schema.extract(args, kwargs, Operation.CREATION)
-        return self._engine.create_instance(self, fields)
+        return self._database.create_instance(self, fields)
 
     def get(self, *args, **kwargs):
         """
@@ -115,14 +125,14 @@ class MetaModel(type):
 
         """
         fields = self._schema.extract(args, kwargs, operation=Operation.PORTION)
-        return self._engine.get_instance(self, fields)
+        return self._database.get_instance(self, fields)
 
     def select(self, *args, **kwargs):
         """
         Return the matching instances.
 
         """
-        return self._engine.select(self, args, kwargs)
+        return self._database.select(self, args, kwargs)
 
     def update_instance(self, instance, field, value):
         """
@@ -142,7 +152,7 @@ class MetaModel(type):
             attrs = {field.name: getattr(instance, field.name)
                     for field in instance._fields.values()}
             transaction.objects[instance] = attrs
-        return self._engine.update_instance(instance, field, value)
+        return self._database.update_instance(instance, field, value)
 
 
 class Model(metaclass=MetaModel):
@@ -160,6 +170,7 @@ class Model(metaclass=MetaModel):
     """
 
     _alt_name: Optional[str] = None
+    _database: Optional['pygasus.schema.database.Database'] = None
     _engine: Optional['pygasus.engine.base.BaseEngine'] = None
     _fields = {}
 
@@ -186,6 +197,18 @@ class Model(metaclass=MetaModel):
         else:
             super().__setattr__(key, value)
 
+    @property
+    def _primary_values(self):
+        """Return a tuple of primary values for this model."""
+        primary = []
+        for key, field in type(self)._fields.items():
+            if field.primary_key:
+                value = getattr(self, key)
+                primary.append(value)
+
+        return tuple(primary)
+
+
     def delete(self):
         """Remove this object from the database."""
-        return self._engine.delete_instance(self)
+        return self._database.delete_instance(self)

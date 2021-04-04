@@ -31,10 +31,9 @@
 from abc import ABCMeta, abstractmethod
 from typing import Any, Dict, Optional, Type
 
-from pygasus.schema.field import Field
+from pygasus.engine.generic.columns.base import BaseColumn
+from pygasus.engine.generic.table import GenericTable
 from pygasus.schema.transaction import Transaction
-
-Model = 'pygasus.schema.model.Model'
 
 class BaseEngine(metaclass=ABCMeta):
 
@@ -80,88 +79,113 @@ class BaseEngine(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def create_table_for(self, model):
+    def create_table_for(self, table: GenericTable):
         """
-        Create a table for this model.
+        Create a database table for this Generic table.
 
         Notice that this method is called each time the model is
         loaded, therefore this method should do nothing if the table
         already exists.
 
         Args:
-            model (subclass of Model): the model.
+            table (GenericTable): the generic table.
 
         """
 
     @abstractmethod
-    def get_saved_schema_for(self, model):
+    def get_saved_schema_for(self, table: GenericTable):
         """
-        Return the saved schema for this model, if any.
+        Return the saved schema for this table, if any.
 
         Returning `None` will lead to the database calling `create_table_for`.
         If migrations are supported for this engine, the schema should
-        be returned (the list of fields stored in the last migration).
+        be returned (the list of columns stored in the last migration).
 
         Args:
-            model (subclass of Model): the model.
+            table (GenericTable): the generic table.
 
         """
 
     @abstractmethod
-    def get_instance(self, model: Type[Model],
-            fields: Dict[Field, Any]) -> Optional[Model]:
+    def get_row(self, table: GenericTable,
+            columns: Dict[BaseColumn, Any]) -> Optional[Dict[str, Any]]:
         """
-        Get, if possible, an instance with the specified fields.
+        Get, if possible, a row with the specified columns.
 
-        If more than one instance would match the specified fields, `None` is returned.  If no match is found, `None` is also returned.  For greater precision, use `select`.
+        If more than one row would match the specified columns,
+        `None` is returned.  If no match is found, `None` is also returned.
+        For greater precision, use `select`.
 
         Args:
-            model (subclass of Model): the model class.
-            fields (dict): the field dictionary, containing, as keys,
-                    field objects, ans as values, whatever value
-                    (of whatever type) has been sent by the user.
+            table (GenericTable): the generic table.
+            columns (dict): the column dictionary, containing, as keys,
+                    column objects, and as values, whatever value
+                    (of whatever type) has been set by the user.
 
         Returns:
-            instance (Model or None): the instance matching these fields.
+            row (dict or None): the row columns as a dict.
 
         """
-
 
     @abstractmethod
-    def create_instance(self, instance: Model, fields: Dict[Field, Any]):
+    def select_rows(self, *args, **kwargs):
         """
-        Create and update a model's instance fields.
+        Return a query object filtered according to the specified arguments.
+
+        Positional arguments should contain query filters, like
+        `Person.name == "Vincent"`.  Keyword arguments should contain
+        direct matches tested on equality, like `first_name="Vincent`).
+
+        Hence, here are some examples of ways to call this method:
+
+            engine.select_row(Person.first_name == "Vincent")
+            engine.select_row(Person.age > 21, Person.name.lower() == "lucy")
+            engine.select_row(name="Vincent")
+
+        Returns:
+            The list of rows matching the specified queries.
+
+        """
+
+    @abstractmethod
+    def insert_row(self, table: GenericTable,
+            columns: Dict[BaseColumn, Any]) -> Dict[str, Any]:
+        """
+        Insert a row in the database.
 
         Args:
-            instance (Model): the model to be populated.
-            fields (dict): the dictionary or fields.  This should contain
-                    field objects as keys and their values (can be
+            table (GenericTable): the generic table.
+            columns (dict): the dictionary of columns.  This should contain
+                    column objects as keys and their values (can be
                     a default value).
 
         """
 
     @abstractmethod
-    def update_instance(self, instance: Model, field: Field, value: Any):
+    def update_row(self, table: GenericTable, primary_keys: Dict[str, Any],
+            column: BaseColumn, value: Any):
         """
-        If possible, update the specific instance's field.
+        If possible, update the specified row's field.
 
         Args:
-            instance (Model): the model to modify.
-            field (Field): the field to be applied.
-            value (Any): the field's new value.
+            table (GenericTable): the generic table.
+            primary_keys (dict): the dictionary of primary keys.
+            column (BaseColumn): the column to update.
+            value (Any): the column's new value.
 
         This value is supposed to have been filtered and allowed by the
-        instance.
+        model layer.
 
         """
 
     @abstractmethod
-    def delete_instance(self, instance: Model):
+    def delete_row(self, table: GenericTable, primary_keys: Dict[str, Any]):
         """
-        Delete the specified instance from the database.
+        Delete the specified row from the database.
 
         Args:
-            instance (Model): the model instance to be deleted.
+            table (GenericTable): the generic table.
+            primary_keys (dict): the dictionary of primary keys.
 
         """
 

@@ -26,60 +26,10 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the basic IDMapper."""
+"""Module containing the TimestampColumn class."""
 
-class IDMapper:
+from pygasus.engine.generic.columns.base import BaseColumn
 
-    """Basic ID mapper."""
+class TimestampColumn(BaseColumn):
 
-    def __init__(self, database):
-        self.database = database
-        self.objects = {}
-
-    def get(self, model, primary):
-        """
-        Get an object from the ID mapper, or None.
-
-        Args:
-            model (Model): the model class.
-            primary (tuple): the primary fields.
-
-        Returns:
-            model (Model instance or None).
-
-        """
-        return self.objects.get(model, {}).get(primary)
-
-    def set(self, model, primary, instance):
-        """
-        Set the object in the ID mapper.
-
-        Args:
-            model (Model): the model class.
-            primary (tuple): the primary fields.
-            instance (Model): the model instance.
-
-        """
-        if self.get(model, primary):
-            return
-
-        objects = self.objects.get(model)
-        if objects is None:
-            objects = {}
-            self.objects[model] = objects
-        objects[primary] = instance
-
-    def delete(self, model, primary):
-        """
-        Delete the specified model instance from the ID mapper.
-
-        Args:
-            model (Model): the model subclass.
-            primary (tuple): the primary field dictionary.
-
-        """
-        objects = self.objects.get(model)
-        if objects is None:
-            return
-
-        return objects.pop(primary)
+    """Column to contain a datetime.datetime."""

@@ -28,10 +28,13 @@
 
 """Class describing a database, working with a database engine."""
 
-from typing import Optional, Sequence, Type, Union
+from typing import Any, Dict, Optional, Sequence, Type, Union
 
 from pygasus.engine.base import BaseEngine
+from pygasus.engine.generic.columns.base import BaseColumn
+from pygasus.engine.generic.table import GenericTable
 from pygasus.engine.sqlite import Sqlite3Engine
+from pygasus.schema.field import Field
 from pygasus.schema.mapper import IDMapper
 from pygasus.schema.model import Model, MODELS
 from pygasus.schema.transaction import Transaction
@@ -102,9 +105,16 @@ class Database:
         for cls in models:
             # ... add checks here.
             cls.load_schema()
+            cls._database = self
             cls._engine = self._engine
 
-        self.models = tuple(models)
+        self._models = tuple(models)
+
+        # Generate generic tables for models.
+        for model in models:
+            table = GenericTable.create_from_model(model)
+            model._generic = table
+
 
     def init(self, *args, **kwargs):
         """
@@ -117,10 +127,10 @@ class Database:
         self._engine.create_migration_table()
 
         # Check the model schemas.
-        for cls in self.models:
+        for cls in self._models:
             saved_schema = self._engine.get_saved_schema_for(cls)
             if saved_schema is None:
-                self._engine.create_table_for(cls)
+                self._engine.create_table_for(cls._generic)
             else:
                 diff = self.create_diff_between(saved_schema, cls._schema)
                 if diff is not None:
@@ -133,3 +143,156 @@ class Database:
     def destroy(self):
         """Destroy the database."""
         self._engine.destroy()
+
+    # Interactions between models and generic tables:
+    def create_instance(self, model: Type[Model],
+            fields: Dict[Field, Any]) -> Model:
+        """
+        Create an instance of a model.
+
+        This method connects the model layer to the database engine layer.  It accepts parameters from a model, contacts the database engine and handles generation of an instance.  Instance creation can also be intercepted by the ID mapper if the instance already exists in the cache.
+
+        Args:
+            model (subclass of Model): the model class.
+            fields (dict): the fields to create, as a dictionary,
+                    containing `{field object: value}`.
+
+        Returns:
+            instance (Model): the model instance.
+
+        """
+        table = model._generic
+        columns = self._get_columns(table, fields)
+        data = self._engine.insert_row(table, columns)
+        instance = model(**data)
+        if self.id_mapper:
+            self.id_mapper.set(model, instance._primary_values, instance)
+
+        return instance
+
+    def get_instance(self, model: Type[Model],
+            fields: Dict[Field, Any]) -> Optional[Model]:
+        """
+        Fetch a model from the database.
+
+        This method connects the model layer to the database engine layer.
+        It accepts parameters from a model, contacts the database engine
+        and handles generation of an instance.  Instance creation can
+        also be intercepted by the ID mapper if the instance already
+        exists in the cache.
+
+        Args:
+            model (subclass of Model): the model class.
+            fields (dict): the fields to query as a dictionary,
+                    containing `{field object: value}`.
+
+        Returns:
+            instance (Model): the model instance or None.
+
+        """
+        table = model._generic
+        columns = self._get_columns(table, fields)
+        data = self._engine.get_row(table, columns)
+        if data is None:
+            return None
+
+        if self.id_mapper:
+            primary = model._primary_values_from_dict(data)
+            instance = self.id_mapper.get(model, primary)
+            if instance is not None:
+                return instance
+
+        instance = model(**data)
+        if self.id_mapper:
+            self.id_mapper.set(model, primary, instance)
+
+        return instance
+
+    def select(self, model: Model, queries, filters):
+        """
+        Select one or more results from the database.
+
+        Args:
+            model (subclass of Model): the model class.
+            args (tuple): the queries.
+            kwargs (dict): the field queries.
+
+        Returns:
+            match (list of Model): the list of results.
+
+        """
+        table = model._generic
+        results = self._engine.select_rows(table, queries, filters)
+
+        # Add or get from IDMapper.
+        for i, data in enumerate(results):
+            primary = model._primary_values_from_dict(data)
+            if self.id_mapper:
+                instance = self.id_mapper.get(model, primary)
+                if instance is not None:
+                    results[i] = instance
+                    continue
+
+            instance = model(**instance)
+            if self.id_mapper:
+                self.id_mapper.set(model, primary, instance)
+            results[i] = instance
+
+        return results
+
+    def update_instance(self, instance: Model, field: Field, value: Any):
+        """
+        Update the value of a given field.
+
+        Args:
+            instance (Model): the model instance.
+            field (Field): the field to update.
+            value (Any): the new field's value.
+
+        """
+        transaction = self._current_transaction
+        if transaction:
+            if instance not in transaction.objects:
+                attrs = {field.name: getattr(instance, field.name)
+                        for field in instance._fields.values()}
+                transaction.objects[instance] = attrs
+        table = type(instance)._generic
+        column = table.columns[field.name]
+        primary = {field.name: getattr(instance, field.name)
+                for field in type(instance)._fields.values()
+                if field.primary_key}
+        self._engine.update_row(table, primary, column, value)
+        instance._has_init = False
+        setattr(instance, field.name, value)
+        instance._has_init = True
+
+    def delete_instance(self, instance: Model):
+        """
+        Delete the specified instance.
+
+        Args:
+            instance (Model): the model instance to delete.
+
+        """
+        transaction = self._current_transaction
+        if transaction:
+            if instance not in transaction.objects:
+                attrs = {field.name: getattr(instance, field.name)
+                        for field in instance._fields.values()}
+                transaction.objects[instance] = attrs
+        table = type(instance)._generic
+        primary = {field.name: getattr(instance, field.name)
+                for field in type(instance)._fields.values()
+                if field.primary_key}
+        self._engine.delete_row(table, primary)
+        instance._has_init = False
+
+    def _get_columns(self, table: GenericTable,
+            fields: Dict[Field, Any]) -> Dict[BaseColumn, Any]:
+        """Return the column and their values."""
+        columns = {}
+        for key, value in fields.items():
+            column = table.columns[key]
+            columns[column] = value
+
+        return columns
