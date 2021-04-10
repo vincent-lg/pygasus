@@ -45,7 +45,6 @@ class MetaModel(type):
         cls = super().__new__(cls, name, bases, attrs)
         if cls.__name__ != "Model":
             MODELS.add(cls)
-            cls._fields = MetaModel.get_fields(cls)
         return cls
 
     def _primary_values_from_dict(self, data: Dict[str, Any]) -> tuple:
@@ -59,12 +58,14 @@ class MetaModel(type):
         return tuple(primary)
 
     @staticmethod
-    def get_fields(model: Type["Model"]) -> Dict[str, Field]:
+    def get_fields(model: Type["Model"],
+            others: Dict[str, Type["Model"]]) -> Dict[str, Field]:
         """Get the tuple of fields from a model."""
         import pygasus
+        others["pygasus"] = pygasus
         fields = {}
         # Wrap annotated fields.
-        for key, annotation in get_type_hints(model, {"pygasus": pygasus}).items():
+        for key, annotation in get_type_hints(model, others).items():
             value = getattr(model, key, _NOT_SET)
             if key.startswith("_"):
                 continue

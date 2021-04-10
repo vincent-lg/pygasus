@@ -100,10 +100,11 @@ class Database:
 
         """
         models = MODELS if models is None else models
+        names = {cls.__name__: cls for cls in models}
 
         # Check that all models equire no external bound models.
         for cls in models:
-            # ... add checks here.
+            cls._fields = cls.get_fields(cls, names)
             cls.load_schema()
             cls._database = self
             cls._engine = self._engine
