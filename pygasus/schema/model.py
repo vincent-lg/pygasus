@@ -28,7 +28,7 @@
 
 """Base class for all models."""
 
-from typing import Any, Dict, Optional, Type
+from typing import get_type_hints, Any, Dict, Optional, Type
 
 from pygasus.exceptions import SetByDatabase
 from pygasus.schema.field import Field
@@ -61,7 +61,19 @@ class MetaModel(type):
     @staticmethod
     def get_fields(model: Type["Model"]) -> Dict[str, Field]:
         """Get the tuple of fields from a model."""
+        import pygasus
         fields = {}
+        # Wrap annotated fields.
+        for key, annotation in get_type_hints(model, {"pygasus": pygasus}).items():
+            value = getattr(model, key, _NOT_SET)
+            if key.startswith("_"):
+                continue
+
+            if value is _NOT_SET:
+                # Create a field for this annotation.
+                setattr(model, key, Field(annotation))
+
+        # Browse the field objects.
         for key, value in tuple(model.__dict__.items()):
             if isinstance(value, Field):
                 value.name = key

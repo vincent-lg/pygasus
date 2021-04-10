@@ -30,15 +30,16 @@
 
 from test.base import BaseTest
 
-from pygasus import Field, Model
+from pygasus import Model
 from pygasus.exceptions import *
 
 class Product(Model):
 
     """A simple product."""
 
-    name = Field(str)
-    price = Field(int)
+    name: str
+    price: int
+
 
 class TestTransactions(BaseTest):
 

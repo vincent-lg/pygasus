@@ -30,15 +30,16 @@
 
 from test.base import BaseTest
 
-from pygasus import IDMapper, Field, Model
+from pygasus import IDMapper, Model
 from pygasus.exceptions import *
 
 class Car(Model):
 
     """A simple car."""
 
-    name = Field(str)
-    price = Field(int)
+    name: str
+    price: int
+
 
 class TestIDMapper(BaseTest):
 

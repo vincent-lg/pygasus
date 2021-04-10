@@ -60,7 +60,7 @@ class GenericTable:
         self.columns = OrderedDict()
         self.values = {}
 
-    def generate_column_from_field(self, field):
+    def generate_column_from_field(self, field, database):
         """
         Generate a column object from a field, and add it to this table.
 
@@ -68,17 +68,50 @@ class GenericTable:
             field (Field): the model field.
 
         """
-        col_type = COL_TYPES.get(field.field_type, BlobColumn)
-        column = col_type(field, self)
-        self.columns[column.name] = column
+        column = None
+        if isinstance(field, type(...)):
+            # Try to find the counterpart.
+            opposed = database._models.get(field.model_name)
+
+            if opposed is None:
+                raise ValueError(
+                        f"model {field._model.__name__}.{field.name}: "
+                        f"cannot find the opposed model, {field.model_name!r}"
+                )
+
+            # Browse the opposite model for a link to the current model.
+            for opposed_field in opposed._fields.values():
+                if isinstance(opposed_field, HasOne):
+                    if opposed_field.model_name == field._model.__name__:
+                        break
+            else:
+                raise ValueError(
+                        f"model {field._model.__name__}.{field.name}: "
+                        f"cannot find an opposed field in model "
+                        f"{opposed.__name__}, have you forgotten a HasOne "
+                        "or HasMany?"
+                )
+
+            # Now determines the type of relationship.
+            back = opposed_field
+            if isinstance(field, HasOne) and isinstance(back, HasOne):
+                # one-to-one
+                column = OneToOneColumn(field, back)
+        else:
+            col_type = COL_TYPES.get(field.field_type, BlobColumn)
+            column = col_type(field, self)
+
+        if column:
+            self.columns[column.name] = column
 
     @classmethod
-    def create_from_model(cls, model):
+    def create_from_model(cls, model, database):
         """
         Create a generic table from a model class.
 
         Args:
             model (subclass of Model): the model class.
+            database (Database): the database.
 
         Returns:
             generic (GenericTable): the new generic table.
@@ -86,6 +119,6 @@ class GenericTable:
         """
         generic = cls(model)
         for field in model._fields.values():
-            generic.generate_column_from_field(field)
+            generic.generate_column_from_field(field, database)
 
         return generic

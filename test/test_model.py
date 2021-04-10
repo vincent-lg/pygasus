@@ -30,16 +30,16 @@
 
 from test.base import BaseTest
 
-from pygasus import Field, Model
+from pygasus import Model
 from pygasus.exceptions import *
 
 class Book(Model):
 
     """A simple book model."""
 
-    title = Field(str)
-    author = Field(str)
-    year = Field(int)
+    title: str
+    author: str
+    year: int
 
 class TestModels(BaseTest):
 

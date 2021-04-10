@@ -112,7 +112,7 @@ class Database:
 
         # Generate generic tables for models.
         for model in models:
-            table = GenericTable.create_from_model(model)
+            table = GenericTable.create_from_model(model, self)
             model._generic = table
 
 
