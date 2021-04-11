@@ -56,7 +56,7 @@ class Database:
 
     def __init__(self):
         self._engine = Sqlite3Engine(self)
-        self._models = ()
+        self._models = {}
         self._current_transaction = None
         self.id_mapper = IDMapper(self)
 
@@ -100,6 +100,7 @@ class Database:
 
         """
         models = MODELS if models is None else models
+        self._models = {cls.__name__: cls for cls in models}
         names = {cls.__name__: cls for cls in models}
 
         # Check that all models equire no external bound models.
@@ -109,7 +110,9 @@ class Database:
             cls._database = self
             cls._engine = self._engine
 
-        self._models = tuple(models)
+        # Complete fields.
+        for cls in models:
+            cls.complete_fields(cls)
 
         # Generate generic tables for models.
         for model in models:
@@ -128,7 +131,7 @@ class Database:
         self._engine.create_migration_table()
 
         # Check the model schemas.
-        for cls in self._models:
+        for cls in self._models.values():
             saved_schema = self._engine.get_saved_schema_for(cls)
             if saved_schema is None:
                 self._engine.create_table_for(cls._generic)
@@ -163,8 +166,17 @@ class Database:
 
         """
         table = model._generic
-        columns = self._get_columns(table, fields)
+        columns = table.prepare_columns(dict(fields))
         data = self._engine.insert_row(table, columns)
+
+        # Normalizes data.
+        for key, value in tuple(data.items()):
+            if key not in model._fields:
+                data.pop(key)
+
+        for field, value in fields.items():
+            data[field.name] = value
+
         instance = model(**data)
         if self.id_mapper:
             self.id_mapper.set(model, instance._primary_values, instance)
@@ -258,6 +270,7 @@ class Database:
                         for field in instance._fields.values()}
                 transaction.objects[instance] = attrs
         table = type(instance)._generic
+        columns = table.prepare_columns({field: value})
         column = table.columns[field.name]
         primary = {field.name: getattr(instance, field.name)
                 for field in type(instance)._fields.values()
@@ -293,7 +306,10 @@ class Database:
         """Return the column and their values."""
         columns = {}
         for key, value in fields.items():
-            column = table.columns[key]
+            column = table.columns.get(key)
+            if column is None:
+                continue
+
             columns[column] = value
 
         return columns

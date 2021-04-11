@@ -36,9 +36,11 @@ class BaseTest(TestCase):
 
     """Base test class, creating a database in memory."""
 
+    models = ()
+
     def setUp(self):
         self.db = Database()
-        self.db.bind()
+        self.db.bind(type(self).models)
         self.db.init(memory=True)
 
     def tearDown(self):

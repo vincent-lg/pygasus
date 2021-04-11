@@ -45,9 +45,10 @@ class TestModels(BaseTest):
 
     """Test the model API."""
 
+    models = (Book, )
+
     def setUp(self):
         super().setUp()
-        self.db.bind((Book, ))
 
     def test_create(self):
         """Create several instances."""

@@ -46,6 +46,37 @@ class Field(Query):
         self.primary_key = primary_key
         self.name = name
         self.default = default
+        self.model = None
+        self.store_sequence = False
+        self.mirror = None
+        self.memory = {}
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+
+        # The value might be cached in `memory`
+        identifier = hash(instance)
+        value = self.memory.get(identifier, _NOT_SET)
+        if value is _NOT_SET:
+            value = None
+            self.memory[identifier] = value
+
+        return value
+
+    def __set__(self, instance, value):
+        identifier = hash(instance)
+        if self.mirror:
+            old_value = self.mirror.memory.get(hash(value))
+
+        self.memory[identifier] = value
+
+        if self.mirror:
+            if old_value:
+                self.memory[hash(old_value)] = None
+
+            if value:
+                self.mirror.memory[hash(value)] = instance
 
     def __hash__(self):
         return hash(self.name)
@@ -55,10 +86,21 @@ class Field(Query):
 
     def __str__(self):
         text = f"{self.name!r} of type {self.field_type.__name__}"
+        info = []
         if self.primary_key:
-            text += " (primary key)"
+            info.append("primary_key")
 
-        return text
+        if self.has_default:
+            info.append(f"default={self.default!r}")
+
+        if self.store_sequence:
+            info.append("store_sequence")
+
+        if self.mirror:
+            info.append(f"mirror={self.mirror.name} "
+                    f"on {self.mirror.model.__name__}")
+
+        return f"{text} ({', '.join(info)})"
 
     @property
     def set_by_database(self):

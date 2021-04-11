@@ -26,26 +26,27 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the BaseColumn class."""
+"""Module containing the OneToOne related column."""
 
-class BaseColumn:
+from pygasus.engine.generic.columns.base import BaseColumn
 
-    """
-    Abstract class for generic columns, in a generic table.
+class OneToOneColumn(BaseColumn):
 
-    Generic coluns are linked to a model field, but they're closer
-    to the database in design.
+    """Column to contain a reference to a model."""
 
-    """
-
-    def __init__(self, field, table):
-        self.table = table
-        self.name = field.name
-        self.primary_key = field.primary_key
-        self.default = field.default
-        self.has_default = field.has_default
-        self.set_by_database = field.set_by_database
+    def __init__(self, table, from_model, to_model, from_field, to_field, primary):
+        super().__init__(from_field, table)
+        model_name = to_model._alt_name or to_model.__name__.lower()
+        self.name = f"{model_name}_{primary.name}"
+        self.from_model = from_model
+        self.to_model = to_model
+        self.from_field = from_field
+        self.to_field = to_field
+        self.primary = primary
 
     def retrieve_additional_columns(self, fields):
         """Return additional columns for this column type."""
-        return {}
+        model = fields[self.from_field]
+        return {
+                self: getattr(model, self.primary.name),
+        }

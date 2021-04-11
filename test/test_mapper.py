@@ -45,10 +45,11 @@ class TestIDMapper(BaseTest):
 
     """Test the transaction API."""
 
+    models = (Car, )
+
     def setUp(self):
         super().setUp()
         self.db.id_mapper = IDMapper(self)
-        self.db.bind((Car, ))
 
     def test_create_and_get(self):
         """Create several cars, checking their identities."""

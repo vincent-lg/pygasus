@@ -45,6 +45,8 @@ class TestTransactions(BaseTest):
 
     """Test the transaction API."""
 
+    models = (Product, )
+
     def setUp(self):
         super().setUp()
         self.db.bind((Product, ))

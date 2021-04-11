@@ -73,10 +73,13 @@ class MetaModel(type):
             if value is _NOT_SET:
                 # Create a field for this annotation.
                 setattr(model, key, Field(annotation))
+            elif not isinstance(value, Field): # This is not a field, wrap it.
+                setattr(model, key, Field(annotation, default=value))
 
         # Browse the field objects.
         for key, value in tuple(model.__dict__.items()):
             if isinstance(value, Field):
+                value.model = model
                 value.name = key
                 fields[key] = value
 
@@ -101,6 +104,30 @@ class MetaModel(type):
             )
 
         return fields
+
+    @staticmethod
+    def complete_fields(model: Type["Model"]):
+        """Complete model fields in relations."""
+        for field in model._fields.values():
+            if field.mirror:
+                continue
+
+            if issubclass(field.field_type, Model):
+                # Try to find the opposite field.
+                for opposite in field.field_type._fields.values():
+                    if opposite.field_type is field.model:
+                        break
+                else:
+                    raise ValueError(
+                            f"cannot find the opposite field of the relation "
+                            f"started in {field.model.__name__}."
+                            f"{field.name}: no field in "
+                            f"{field.field_type.__name__} points to "
+                            f"{field.model.__name__}"
+                    )
+
+                field.mirror = opposite
+                opposite.mirror = field
 
     def __str__(self):
         text = f"{self.__name__} ("
@@ -193,9 +220,13 @@ class Model(metaclass=MetaModel):
         self._has_init = True
 
     def __repr__(self):
-        pk = self._schema.primary_key
-        value = getattr(self, pk.name)
-        return f"<{type(self).__name__}({pk.name}={value!r})>"
+        pk = {}
+        for field in self._schema.primary_keys:
+            value = getattr(self, field.name)
+            pk[field.name] = value
+
+        pk = ", ".join([f"{key}={value!r}" for key, value in pk.items()])
+        return f"<{type(self).__name__}({pk})>"
 
     def __setattr__(self, key, value):
         """If a field is updated, notify the database engine."""

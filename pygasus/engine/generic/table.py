@@ -30,9 +30,13 @@
 
 from collections import OrderedDict
 import datetime
+from typing import Any, Dict, Type
+
 from pygasus.engine.generic.columns import (
-        BlobColumn, DateColumn, IntegerColumn,
+        BlobColumn, DateColumn, IntegerColumn, OneToOneColumn,
         RealColumn, TimestampColumn, TextColumn)
+from pygasus.engine.generic.columns.base import BaseColumn
+from pygasus.schema.model import Model
 
 COL_TYPES = {
         bytes: BlobColumn,
@@ -55,7 +59,8 @@ class GenericTable:
 
     """
 
-    def __init__(self, model):
+    def __init__(self, model: Type[Model]):
+        self.model = model
         self.name = model._alt_name or model.__name__.lower()
         self.columns = OrderedDict()
         self.values = {}
@@ -68,41 +73,66 @@ class GenericTable:
             field (Field): the model field.
 
         """
-        column = None
-        if isinstance(field, type(...)):
+        columns = []
+        if issubclass(field.field_type, Model):
             # Try to find the counterpart.
-            opposed = database._models.get(field.model_name)
-
-            if opposed is None:
-                raise ValueError(
-                        f"model {field._model.__name__}.{field.name}: "
-                        f"cannot find the opposed model, {field.model_name!r}"
-                )
+            opposed = field.field_type
 
             # Browse the opposite model for a link to the current model.
-            for opposed_field in opposed._fields.values():
-                if isinstance(opposed_field, HasOne):
-                    if opposed_field.model_name == field._model.__name__:
-                        break
+            for opposite_field in opposed._fields.values():
+                if opposite_field.field_type is self.model:
+                    break
             else:
                 raise ValueError(
-                        f"model {field._model.__name__}.{field.name}: "
+                        f"model {field.model.__name__}.{field.name}: "
                         f"cannot find an opposed field in model "
                         f"{opposed.__name__}, have you forgotten a HasOne "
                         "or HasMany?"
                 )
 
             # Now determines the type of relationship.
-            back = opposed_field
-            if isinstance(field, HasOne) and isinstance(back, HasOne):
-                # one-to-one
-                column = OneToOneColumn(field, back)
+            back = opposite_field
+            if back.field_type is self.model and back.has_default: # One-to-one
+                for pk in field.field_type._schema.primary_keys:
+                    columns.append(OneToOneColumn(self, self.model,
+                            field.field_type, field, back, pk))
         else:
             col_type = COL_TYPES.get(field.field_type, BlobColumn)
-            column = col_type(field, self)
+            columns.append(col_type(field, self))
 
-        if column:
+        for column in columns:
             self.columns[column.name] = column
+
+    def prepare_columns(self,
+            fields: Dict['pygasus.schema.field.Field', Any]) -> Dict[
+            BaseColumn, Any]:
+        """
+        Return the column and their values.
+
+        This method allows to customize columns that are not stored simply
+        according to what field holds (relations).
+
+        Args:
+            fields (dict): the dictionary of field and data.
+
+        Returns:
+            columsn (dict): the columns to store.
+
+        """
+        columns = {}
+        for key, value in tuple(fields.items()):
+            column = self.columns.get(key)
+            if column is None:
+                continue
+
+            columns[column] = value
+            fields.pop(key)
+
+        # Ask the remaining columns if they want to do something.
+        for column in self.columns.values():
+            columns.update(column.retrieve_additional_columns(fields))
+
+        return columns
 
     @classmethod
     def create_from_model(cls, model, database):

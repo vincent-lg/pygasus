@@ -31,6 +31,7 @@
 from pygasus.engine.generic.columns.blob import BlobColumn
 from pygasus.engine.generic.columns.date import DateColumn
 from pygasus.engine.generic.columns.integer import IntegerColumn
+from pygasus.engine.generic.columns.one2one import OneToOneColumn
 from pygasus.engine.generic.columns.real import RealColumn
 from pygasus.engine.generic.columns.text import TextColumn
 from pygasus.engine.generic.columns.timestamp import TimestampColumn

@@ -51,7 +51,7 @@ class ModelSchema:
     def __init__(self, model, fields):
         self.model = model
         self.fields = fields
-        self.primary_key = next(field for field in fields.values()
+        self.primary_keys = tuple(field for field in fields.values()
                 if field.primary_key)
 
     def extract(self, args, kwargs, operation: Operation = Operation.PORTION):

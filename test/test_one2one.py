@@ -26,26 +26,51 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the BaseColumn class."""
+"""Test the model API with a one-to-one relations."""
 
-class BaseColumn:
+from test.base import BaseTest
 
-    """
-    Abstract class for generic columns, in a generic table.
+from pygasus import Model
+from pygasus.exceptions import *
 
-    Generic coluns are linked to a model field, but they're closer
-    to the database in design.
+class Book(Model):
 
-    """
+    """A simple book model."""
 
-    def __init__(self, field, table):
-        self.table = table
-        self.name = field.name
-        self.primary_key = field.primary_key
-        self.default = field.default
-        self.has_default = field.has_default
-        self.set_by_database = field.set_by_database
+    title: str
+    author: "Author"
+    year: int
 
-    def retrieve_additional_columns(self, fields):
-        """Return additional columns for this column type."""
-        return {}
+class Author(Model):
+
+    """Book author."""
+
+    last_name: str
+    first_name: str
+    book: "Book" = None
+    born_in: int
+
+class TestModels(BaseTest):
+
+    """Test the model API."""
+
+    models = (Book, Author)
+
+    def setUp(self):
+        super().setUp()
+
+    def test_create(self):
+        """Create several books and authors, linking them."""
+        dickens = Author.create(first_name="Charles", last_name="Dickens",
+                born_in=1812)
+        carol = Book.create(title="A Christmas Carol", author=dickens, year=1843)
+        self.assertIs(carol.author, dickens)
+        self.assertIs(dickens.book, carol)
+
+        # Create a second author and assign the book to it.
+        london = Author.create(first_name="Jack", last_name="London",
+                born_in=1876, book=carol)
+        self.assertIs(london.book, carol)
+        self.assertIs(carol.author, london)
+        self.assertIsNone(dickens.book)
+

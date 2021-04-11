@@ -36,7 +36,7 @@ import sqlite3
 from typing import Any, Dict, Optional, Type, Union
 
 from pygasus.engine.base import BaseEngine
-from pygasus.engine.generic.columns import IntegerColumn
+from pygasus.engine.generic.columns import IntegerColumn, OneToOneColumn
 from pygasus.engine.generic.columns.base import BaseColumn
 from pygasus.engine.generic.table import GenericTable
 from pygasus.engine.sqlite.constants import (
@@ -136,8 +136,12 @@ class Sqlite3Engine(BaseEngine):
         """
         sql_columns = []
         for column in table.columns.values():
-            sql_type = SQL_TYPES.get(type(column), "BLOB")
-            sql_column = f"{column.name} {sql_type}"
+            if isinstance(column, OneToOneColumn):
+                sql_column = f"{column.name} INTEGER"
+            else:
+                sql_type = SQL_TYPES.get(type(column), "BLOB")
+                sql_column = f"{column.name} {sql_type}"
+
             if column.primary_key:
                 sql_column += " PRIMARY KEY"
                 if isinstance(column, IntegerColumn):
@@ -149,9 +153,21 @@ class Sqlite3Engine(BaseEngine):
 
             sql_columns.append(sql_column)
 
+        # Now browse columsnt o add constraints.
+        for column in table.columns.values():
+            if isinstance(column, OneToOneColumn):
+                refmodel = column.to_model
+                refname = refmodel._alt_name or refmodel.__name__.lower()
+                pk = column.primary.name
+                sql_columns.append(
+                        f"FOREIGN KEY({column.name}) "
+                        f"REFERENCES {refname}({pk})"
+                )
+
+
         # Send the create query.
         columns = ", ".join(sql_columns)
-        self.cursor.execute(CREATE_TABLE_QUERY.format(table_name=table.name,
+        self._execute(CREATE_TABLE_QUERY.format(table_name=table.name,
                 columns=columns))
 
     def get_saved_schema_for(self, table: GenericTable):

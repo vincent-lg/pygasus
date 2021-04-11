@@ -46,9 +46,10 @@ class TestSelect(BaseTest):
 
     """Test the model API."""
 
+    models = (Book, )
+
     def setUp(self):
         super().setUp()
-        self.db.bind((Book, ))
 
         # Create default books.
         self.balloon = Book.create(title="A Voyage in a Balloon",
