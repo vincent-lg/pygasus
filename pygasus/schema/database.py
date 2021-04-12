@@ -204,7 +204,7 @@ class Database:
 
         """
         table = model._generic
-        columns = self._get_columns(table, fields)
+        columns = table.prepare_columns(fields)
         data = self._engine.get_row(table, columns)
         if data is None:
             return None
@@ -253,7 +253,8 @@ class Database:
 
         return results
 
-    def update_instance(self, instance: Model, field: Field, value: Any):
+    def update_instance(self, instance: Model, field: Field, value: Any,
+            propagate: bool = True):
         """
         Update the value of a given field.
 
@@ -261,6 +262,8 @@ class Database:
             instance (Model): the model instance.
             field (Field): the field to update.
             value (Any): the new field's value.
+            propagate (bool): If True (the default), modify
+                    the instance's field in memory.
 
         """
         transaction = self._current_transaction
@@ -271,14 +274,15 @@ class Database:
                 transaction.objects[instance] = attrs
         table = type(instance)._generic
         columns = table.prepare_columns({field: value})
-        column = table.columns[field.name]
         primary = {field.name: getattr(instance, field.name)
                 for field in type(instance)._fields.values()
                 if field.primary_key}
-        self._engine.update_row(table, primary, column, value)
-        instance._has_init = False
-        setattr(instance, field.name, value)
-        instance._has_init = True
+        for column, col_value in columns.items():
+            self._engine.update_row(table, primary, column, col_value)
+        if propagate:
+            instance._has_init = False
+            setattr(instance, field.name, value)
+            instance._has_init = True
 
     def delete_instance(self, instance: Model):
         """

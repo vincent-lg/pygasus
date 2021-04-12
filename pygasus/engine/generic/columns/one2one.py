@@ -48,5 +48,5 @@ class OneToOneColumn(BaseColumn):
         """Return additional columns for this column type."""
         model = fields[self.from_field]
         return {
-                self: getattr(model, self.primary.name),
+                self: getattr(model, self.primary.name, None),
         }

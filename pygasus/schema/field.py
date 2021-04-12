@@ -67,15 +67,20 @@ class Field(Query):
     def __set__(self, instance, value):
         identifier = hash(instance)
         if self.mirror:
+            old_instance = self.memory.get(hash(instance))
             old_value = self.mirror.memory.get(hash(value))
 
         self.memory[identifier] = value
 
         if self.mirror:
+            if old_instance:
+                self.mirror.memory[hash(old_instance)] = None
+
             if old_value:
                 self.memory[hash(old_value)] = None
 
             if value:
+                self.mirror.model._database.update_instance(value, self.mirror, instance, propagate=False)
                 self.mirror.memory[hash(value)] = instance
 
     def __hash__(self):

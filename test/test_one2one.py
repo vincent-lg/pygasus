@@ -50,7 +50,7 @@ class Author(Model):
     book: "Book" = None
     born_in: int
 
-class TestModels(BaseTest):
+class TestOne2One(BaseTest):
 
     """Test the model API."""
 
@@ -74,3 +74,36 @@ class TestModels(BaseTest):
         self.assertIs(carol.author, london)
         self.assertIsNone(dickens.book)
 
+    def test_update(self):
+        """Test to update a one-to-one relation."""
+        dickens = Author.create(first_name="Charles", last_name="Dickens",
+                born_in=1812)
+        carol = Book.create(title="A Christmas Carol", author=dickens, year=1843)
+        self.assertIs(carol.author, dickens)
+        self.assertIs(dickens.book, carol)
+
+        # Create a second author and assign the book to it.
+        london = Author.create(first_name="Jack", last_name="London",
+                born_in=1876)
+        self.assertIsNone(london.book)
+
+        # The book changes author.
+        carol.author = london
+        self.assertIs(carol.author, london)
+        self.assertIs(london.book, carol)
+        self.assertIsNone(dickens.book)
+
+        # Dickens reassert ownership of the book.
+        dickens.book = carol
+        self.assertIs(carol.author, dickens)
+        self.assertIs(dickens.book, carol)
+        self.assertIsNone(london.book)
+
+    def test_get(self):
+        """Test to get an instance."""
+        dickens = Author.create(first_name="Charles", last_name="Dickens",
+                born_in=1812)
+        carol = Book.create(title="A Christmas Carol", author=dickens, year=1843)
+        self.assertIs(carol.author, dickens)
+        self.assertIs(dickens.book, carol)
+        self.assertIs(Book.get(author=dickens), carol)
