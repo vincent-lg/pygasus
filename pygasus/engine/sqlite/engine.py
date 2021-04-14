@@ -184,7 +184,7 @@ class Sqlite3Engine(BaseEngine):
         """
         return None
 
-    def select_rows(self, table, queries, filters):
+    def select_rows(self, table, query, filters):
         """
         Return a query object filtered according to the specified arguments.
 
@@ -202,7 +202,7 @@ class Sqlite3Engine(BaseEngine):
             The list of rows matching the specified queries.
 
         """
-        walker = QueryWalker(queries[0])
+        walker = QueryWalker(query)
         walker.walk()
         where = walker.sql_statement
         sql_values = walker.sql_values
@@ -210,7 +210,7 @@ class Sqlite3Engine(BaseEngine):
 
         # Send the query.
         self._execute(SELECT_QUERY.format(table_name=table.name,
-                columns=columns, filters=where), sql_values)
+                columns=columns, filters=where, join=""), sql_values)
 
         # Return the rows.
         rows = self.cursor.fetchall()
@@ -237,15 +237,23 @@ class Sqlite3Engine(BaseEngine):
         """
         sql_filters = []
         sql_values = []
+        joins = []
         for column, value in columns.items():
-            sql_filters.append(f"{column.name}=?")
+            sql_filters.append(f"{column.table.name}.{column.name}=?")
+            if column.table is not table:
+                joins.append(column)
+
             sql_values.append(value)
         columns = self._get_sql_columns(table, sep=",")
 
         # Send the query.
         filters = " AND ".join(sql_filters)
+        join = "\n".join([
+                f"INNER JOIN {col.table.name} "
+                f"ON {col.table.name}.{col.name} = {table.name}.id"
+                for col in joins]) if joins else ""
         rows = self._execute(SELECT_QUERY.format(table_name=table.name,
-                columns=columns, filters=filters), sql_values)
+                columns=columns, filters=filters, join=join), sql_values)
         rows = self.cursor.fetchall()
         if len(rows) == 0 or len(rows) < 1:
             return None
@@ -379,7 +387,13 @@ class Sqlite3Engine(BaseEngine):
     def _execute(self, query, fields=None):
         """Execute a query."""
         fields = fields if fields is not None else ()
-        return self.cursor.execute(query, fields)
+        try:
+            result = self.cursor.execute(query, fields)
+        except Exception:
+            print(query)
+            raise
+
+        return result
 
     def _get_sql_columns(self, table: GenericTable, sep=" ") -> str:
         """
@@ -389,7 +403,9 @@ class Sqlite3Engine(BaseEngine):
             sep (str): the separator to place between columns.
 
         """
-        return sep.join(list(table.columns.keys()))
+        names = tuple(f"{col.table.name}.{col.name}"
+                for col in table.columns.values())
+        return sep.join(names)
 
     def _get_dict_of_values(self, table: GenericTable, row: tuple) -> dict:
         """Get and return the dictionary of values for this table."""

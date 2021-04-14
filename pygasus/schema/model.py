@@ -31,7 +31,7 @@
 from typing import get_type_hints, Any, Dict, Optional, Type
 
 from pygasus.exceptions import SetByDatabase
-from pygasus.schema.field import Field
+from pygasus.schema.field import Field, HasOne
 from pygasus.schema.schema import ModelSchema, Operation
 
 MODELS = set()
@@ -108,7 +108,7 @@ class MetaModel(type):
     @staticmethod
     def complete_fields(model: Type["Model"]):
         """Complete model fields in relations."""
-        for field in model._fields.values():
+        for key, field in model._fields.items():
             if field.mirror:
                 continue
 
@@ -126,8 +126,14 @@ class MetaModel(type):
                             f"{field.model.__name__}"
                     )
 
+                field = HasOne(field)
+                opposite = HasOne(opposite)
                 field.mirror = opposite
+                model._fields[key] = field
+                setattr(model, field.name, field)
                 opposite.mirror = field
+                opposite.model._fields[opposite.name] = opposite
+                setattr(opposite.model, opposite.name, opposite)
 
     def __str__(self):
         text = f"{self.__name__} ("
@@ -167,12 +173,12 @@ class MetaModel(type):
         fields = self._schema.extract(args, kwargs, operation=Operation.PORTION)
         return self._database.get_instance(self, fields)
 
-    def select(self, *args, **kwargs):
+    def select(self, query, **kwargs):
         """
         Return the matching instances.
 
         """
-        return self._database.select(self, args, kwargs)
+        return self._database.select(self, query, kwargs)
 
     def update_instance(self, instance, field, value):
         """

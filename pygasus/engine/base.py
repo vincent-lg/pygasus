@@ -128,7 +128,7 @@ class BaseEngine(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def select_rows(self, *args, **kwargs):
+    def select_rows(self, query, filters):
         """
         Return a query object filtered according to the specified arguments.
 

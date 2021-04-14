@@ -107,3 +107,4 @@ class TestOne2One(BaseTest):
         self.assertIs(carol.author, dickens)
         self.assertIs(dickens.book, carol)
         self.assertIs(Book.get(author=dickens), carol)
+        self.assertIs(Author.get(book=carol), dickens)

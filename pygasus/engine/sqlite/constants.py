@@ -62,6 +62,7 @@ CREATE_TABLE_QUERY = dedent("""
 
 SELECT_QUERY = dedent("""
     SELECT {columns} FROM {table_name}
+    {join}
     WHERE {filters};
 """.strip("\n"))
 

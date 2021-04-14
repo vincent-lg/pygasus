@@ -34,6 +34,7 @@ from pygasus.engine.base import BaseEngine
 from pygasus.engine.generic.columns.base import BaseColumn
 from pygasus.engine.generic.table import GenericTable
 from pygasus.engine.sqlite import Sqlite3Engine
+from pygasus.query.query import Query
 from pygasus.schema.field import Field
 from pygasus.schema.mapper import IDMapper
 from pygasus.schema.model import Model, MODELS
@@ -59,6 +60,9 @@ class Database:
         self._models = {}
         self._current_transaction = None
         self.id_mapper = IDMapper(self)
+        Query._database = self
+        Query._engine = self._engine
+        Query._id_mapper = self.id_mapper
 
     @property
     def engine(self):
@@ -81,6 +85,7 @@ class Database:
             engine.database = self
 
         self._engine = engine
+        Query._engine = engine
 
     @property
     def transaction(self):
@@ -204,7 +209,7 @@ class Database:
 
         """
         table = model._generic
-        columns = table.prepare_columns(fields)
+        columns = table.prepare_columns(fields, search_outside=True)
         data = self._engine.get_row(table, columns)
         if data is None:
             return None
@@ -221,37 +226,21 @@ class Database:
 
         return instance
 
-    def select(self, model: Model, queries, filters):
+    def select(self, model: Model, query: Query, filters):
         """
         Select one or more results from the database.
 
         Args:
             model (subclass of Model): the model class.
-            args (tuple): the queries.
-            kwargs (dict): the field queries.
+            query (Query): the query to select from.
+            filters (dict): queries on fields.
 
         Returns:
-            match (list of Model): the list of results.
+            combied (Query): the combined query to be executed.
 
         """
-        table = model._generic
-        results = self._engine.select_rows(table, queries, filters)
-
-        # Add or get from IDMapper.
-        for i, data in enumerate(results):
-            primary = model._primary_values_from_dict(data)
-            if self.id_mapper:
-                instance = self.id_mapper.get(model, primary)
-                if instance is not None:
-                    results[i] = instance
-                    continue
-
-            instance = model(**instance)
-            if self.id_mapper:
-                self.id_mapper.set(model, primary, instance)
-            results[i] = instance
-
-        return results
+        query.model = model
+        return query
 
     def update_instance(self, instance: Model, field: Field, value: Any,
             propagate: bool = True):

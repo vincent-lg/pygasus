@@ -45,6 +45,10 @@ class BaseColumn:
         self.default = field.default
         self.has_default = field.has_default
         self.set_by_database = field.set_by_database
+        field.column = self
+
+    def __repr__(self):
+        return f"<Column {self.name!r} of type {type(self).__name__}>"
 
     def retrieve_additional_columns(self, fields):
         """Return additional columns for this column type."""

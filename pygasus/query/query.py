@@ -60,12 +60,53 @@ class Query:
 
     """
 
+    _database = None
+    _engine = None
+    _id_mapper = None
+
     def __init__(self, operation, arguments=None):
         self.operation = operation
         self.arguments = arguments or (self, )
+        self.model = None
+        self.results = None
 
     def __eq__(self, other):
         return Query(Binary.EQUAL, arguments=(self, other))
+
+    def __iter__(self):
+        results = self.execute()
+        return iter(results)
+
+    def execute(self):
+        """
+        Execute the query.
+
+        This method will send the query to the database engine and
+        will return the result.
+
+        """
+        if self.results is not None:
+            return self.results
+
+        results = type(self)._engine.select_rows(self.model._generic, self, {})
+
+        # Add or get from IDMapper.
+        id_mapper = type(self)._database.id_mapper
+        for i, data in enumerate(results):
+            primary = self.model._primary_values_from_dict(data)
+            if id_mapper:
+                instance = id_mapper.get(self.model, primary)
+                if instance is not None:
+                    results[i] = instance
+                    continue
+
+            instance = self.model(**instance)
+            if id_mapper:
+                id_mapper.set(self.model, primary, instance)
+            results[i] = instance
+
+        self.results = results
+        return results
 
     def contains(self, other):
         """
@@ -107,3 +148,9 @@ class Query:
 
         """
         return Query(Function.LOWER, arguments=(self, ))
+
+    def prefetch(self, field):
+        """Do a prefetch."""
+        query = Query(Unary.PREFETCH, arguments=(self, field))
+        query.model = field.model
+        return query

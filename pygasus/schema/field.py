@@ -49,39 +49,6 @@ class Field(Query):
         self.model = None
         self.store_sequence = False
         self.mirror = None
-        self.memory = {}
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-
-        # The value might be cached in `memory`
-        identifier = hash(instance)
-        value = self.memory.get(identifier, _NOT_SET)
-        if value is _NOT_SET:
-            value = None
-            self.memory[identifier] = value
-
-        return value
-
-    def __set__(self, instance, value):
-        identifier = hash(instance)
-        if self.mirror:
-            old_instance = self.memory.get(hash(instance))
-            old_value = self.mirror.memory.get(hash(value))
-
-        self.memory[identifier] = value
-
-        if self.mirror:
-            if old_instance:
-                self.mirror.memory[hash(old_instance)] = None
-
-            if old_value:
-                self.memory[hash(old_value)] = None
-
-            if value:
-                self.mirror.model._database.update_instance(value, self.mirror, instance, propagate=False)
-                self.mirror.memory[hash(value)] = instance
 
     def __hash__(self):
         return hash(self.name)
@@ -124,3 +91,59 @@ class Field(Query):
             return isinstance(value, accepted)
 
         return True
+
+
+class HasOne(Field):
+
+    """Wrapper around a field, linked to one."""
+
+    def __init__(self, field):
+        self.field = field
+        self.field_type = field.field_type
+        self.primary_key = field.primary_key
+        self.name = field.name
+        self.default = field.default
+        self.model = field.model
+        self.store_sequence = False
+        self.mirror = field.mirror
+        self.memory = {}
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+
+        # The value might be cached in `memory`
+        mapper = type(self)._id_mapper
+        identifier = hash(instance)
+        primary = self.memory.get(identifier, _NOT_SET)
+        if primary is _NOT_SET:
+            value = None
+            self.memory[identifier] = None
+        else:
+            # Ask the ID mapper to retrive the object.
+            value = mapper.get(self.mirror.model, primary)
+
+        return value
+
+    def __set__(self, instance, value):
+        mapper = type(self)._id_mapper
+        identifier = hash(instance)
+        primary = value
+        if value:
+            primary = value._primary_values
+
+        old_value = mapper.get(self.model, self.mirror.memory.get(hash(value)))
+        old_mirror = mapper.get(self.mirror.model, self.memory.get(hash(instance)))
+
+        if old_value:
+            self.memory[hash(old_value)] = None
+
+        if old_mirror:
+            self.mirror.memory[hash(old_mirror)] = None
+
+        self.memory[identifier] = primary
+
+        if value:
+            self.mirror.model._database.update_instance(value, self.mirror, instance, propagate=False)
+            self.mirror.memory[hash(value)] = instance._primary_values
+            mapper.set(type(value), primary, value)

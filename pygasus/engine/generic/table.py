@@ -104,8 +104,8 @@ class GenericTable:
             self.columns[column.name] = column
 
     def prepare_columns(self,
-            fields: Dict['pygasus.schema.field.Field', Any]) -> Dict[
-            BaseColumn, Any]:
+            fields: Dict['pygasus.schema.field.Field', Any],
+            search_outside: bool = False) -> Dict[BaseColumn, Any]:
         """
         Return the column and their values.
 
@@ -114,6 +114,8 @@ class GenericTable:
 
         Args:
             fields (dict): the dictionary of field and data.
+            search_outside (bool): if set to True, search fields in
+                    other models.
 
         Returns:
             columsn (dict): the columns to store.
@@ -131,6 +133,12 @@ class GenericTable:
         # Ask the remaining columns if they want to do something.
         for column in self.columns.values():
             columns.update(column.retrieve_additional_columns(fields))
+
+        if search_outside and fields:
+            for field, value in fields.items():
+                if field.mirror:
+                    columns.update(field.mirror.model._generic.prepare_columns({field.mirror: value}, search_outside=False))
+
 
         return columns
 

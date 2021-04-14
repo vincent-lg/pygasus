@@ -46,6 +46,7 @@ class Unary(Enum):
     """Enumeration containing unary operators."""
 
     RETRIEVE = "simply retrieve a field"
+    PREFETCH = "join and prefetch a foreign field"
 
 class Function(Enum):
 
