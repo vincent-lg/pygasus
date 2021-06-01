@@ -46,7 +46,11 @@ class OneToOneColumn(BaseColumn):
 
     def retrieve_additional_columns(self, fields):
         """Return additional columns for this column type."""
-        model = fields[self.from_field]
+        try:
+            model = fields[self.from_field.name]
+        except KeyError:
+            return {}
+
         return {
                 self: getattr(model, self.primary.name, None),
         }

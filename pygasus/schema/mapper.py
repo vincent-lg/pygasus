@@ -83,3 +83,7 @@ class IDMapper:
             return
 
         return objects.pop(primary)
+
+    def clear(self):
+        """Clear the ID Mapper."""
+        self.objects.clear()

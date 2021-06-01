@@ -79,7 +79,7 @@ class GenericTable:
             opposed = field.field_type
 
             # Browse the opposite model for a link to the current model.
-            for opposite_field in opposed._fields.values():
+            for opposite_field in opposed._schema.fields.values():
                 if opposite_field.field_type is self.model:
                     break
             else:
@@ -122,7 +122,8 @@ class GenericTable:
 
         """
         columns = {}
-        for key, value in tuple(fields.items()):
+        for field, value in tuple(fields.items()):
+            key = field.name
             column = self.columns.get(key)
             if column is None:
                 continue
@@ -156,7 +157,7 @@ class GenericTable:
 
         """
         generic = cls(model)
-        for field in model._fields.values():
+        for field in model._schema.fields.values():
             generic.generate_column_from_field(field, database)
 
         return generic

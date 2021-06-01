@@ -30,9 +30,8 @@
 
 from typing import get_type_hints, Any, Dict, Optional, Type
 
-from pygasus.exceptions import SetByDatabase
 from pygasus.schema.field import Field, HasOne
-from pygasus.schema.schema import ModelSchema, Operation
+from pygasus.schema.schema import ModelSchema
 
 MODELS = set()
 _NOT_SET = object()
@@ -50,7 +49,7 @@ class MetaModel(type):
     def _primary_values_from_dict(self, data: Dict[str, Any]) -> tuple:
         """Return a tuple of primary fields."""
         primary = []
-        for key, field in self._fields.items():
+        for key, field in self._schema.fields.items():
             if field.primary_key:
                 value = data[key]
                 primary.append(value)
@@ -95,7 +94,8 @@ class MetaModel(type):
 
             primary_key = Field(int, primary_key=True, name="id")
             fields = dict(id=primary_key, **fields)
-        elif len(field for field in fields.values() if field.primary_key) < 1:
+            setattr(model, "id", primary_key)
+        elif len([field for field in fields.values() if field.primary_key]) < 1:
             raise ValueError(
                     f"model {model!r}: there are at least two primary key "
                     "fields, which is not allowed.  Please choose one "
@@ -108,13 +108,13 @@ class MetaModel(type):
     @staticmethod
     def complete_fields(model: Type["Model"]):
         """Complete model fields in relations."""
-        for key, field in model._fields.items():
+        for key, field in model._schema.fields.items():
             if field.mirror:
                 continue
 
             if issubclass(field.field_type, Model):
                 # Try to find the opposite field.
-                for opposite in field.field_type._fields.values():
+                for opposite in field.field_type._schema.fields.values():
                     if opposite.field_type is field.model:
                         break
                 else:
@@ -129,10 +129,10 @@ class MetaModel(type):
                 field = HasOne(field)
                 opposite = HasOne(opposite)
                 field.mirror = opposite
-                model._fields[key] = field
+                model._schema.fields[key] = field
                 setattr(model, field.name, field)
                 opposite.mirror = field
-                opposite.model._fields[opposite.name] = opposite
+                opposite.model._schema.fields[opposite.name] = opposite
                 setattr(opposite.model, opposite.name, opposite)
 
     def __str__(self):
@@ -147,14 +147,20 @@ class MetaModel(type):
 
         return text
 
-    def load_schema(self):
-        """Load the model's schema."""
-        self._schema = ModelSchema(self, self._fields)
+    def load_schema(self, fields: Dict[str, Field]):
+        """
+        Load the model's schema.
+
+        Args:
+            fields (dict): the model's current fields.
+
+        """
+        self._schema = ModelSchema(fields, self)
 
     def create(self, *args, **kwargs):
         """Create and return a model instance."""
-        fields = self._schema.extract(args, kwargs, Operation.CREATION)
-        return self._database.create_instance(self, fields)
+        schema = self._schema.bind(args, kwargs, full=True)
+        return self._database.create_instance(self, schema)
 
     def get(self, *args, **kwargs):
         """
@@ -170,8 +176,8 @@ class MetaModel(type):
             are found, return None.
 
         """
-        fields = self._schema.extract(args, kwargs, operation=Operation.PORTION)
-        return self._database.get_instance(self, fields)
+        schema = self._schema.bind(args, kwargs, full=False)
+        return self._database.get_instance(self, schema)
 
     def select(self, query, **kwargs):
         """
@@ -192,12 +198,9 @@ class MetaModel(type):
         """
         transaction = instance._engine.database._current_transaction
         if transaction:
-            if instance in transaction.objects:
-                return
-
-            attrs = {field.name: getattr(instance, field.name)
-                    for field in instance._fields.values()}
-            transaction.objects[instance] = attrs
+            if instance not in transaction.objects:
+                schema = instance._schema.bind_from(instance)
+                transaction.objects[instance] = dict(schema.values)
         return self._database.update_instance(instance, field, value)
 
 
@@ -218,11 +221,21 @@ class Model(metaclass=MetaModel):
     _alt_name: Optional[str] = None
     _database: Optional['pygasus.schema.database.Database'] = None
     _engine: Optional['pygasus.engine.base.BaseEngine'] = None
-    _fields = {}
 
     def __init__(self, **kwargs):
+        self._has_init = False
+        self._schema = type(self)._schema.bind((), kwargs)
+
+        # First, insert only scalar data.
         for key, value in kwargs.items():
-            setattr(self, key, value)
+            if value is not None and not isinstance(value, Model):
+                setattr(self, key, value)
+
+        # Add the rest.
+        for key, value in kwargs.items():
+            if isinstance(value, Model):
+                setattr(self, key, value)
+
         self._has_init = True
 
     def __repr__(self):
@@ -234,30 +247,16 @@ class Model(metaclass=MetaModel):
         pk = ", ".join([f"{key}={value!r}" for key, value in pk.items()])
         return f"<{type(self).__name__}({pk})>"
 
-    def __setattr__(self, key, value):
-        """If a field is updated, notify the database engine."""
-        field = self._fields.get(key, _NOT_SET)
-        has_init = getattr(self, "_has_init", False)
-        if has_init and field and not key.startswith("_"):
-            if field.set_by_database:
-                raise SetByDatabase(type(self), field)
-
-            field.accept(value)
-            type(self).update_instance(self, field, value)
-        else:
-            super().__setattr__(key, value)
-
     @property
     def _primary_values(self):
         """Return a tuple of primary values for this model."""
         primary = []
-        for key, field in type(self)._fields.items():
+        for key, field in type(self)._schema.fields.items():
             if field.primary_key:
                 value = getattr(self, key)
                 primary.append(value)
 
         return tuple(primary)
-
 
     def delete(self):
         """Remove this object from the database."""

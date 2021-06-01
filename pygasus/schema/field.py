@@ -30,6 +30,7 @@
 
 from typing import Any
 
+from pygasus.exceptions import SetByDatabase
 from pygasus.query.operation import Unary
 from pygasus.query.query import Query
 
@@ -49,9 +50,15 @@ class Field(Query):
         self.model = None
         self.store_sequence = False
         self.mirror = None
+        self.memory = {}
 
     def __hash__(self):
         return hash(self.name)
+
+    def __eq__(self, other):
+        if isinstance(other, Field):
+            return hash(self) == hash(other)
+        return super().__eq__(other)
 
     def __repr__(self):
         return f"<Field {self.name!r}>"
@@ -73,6 +80,29 @@ class Field(Query):
                     f"on {self.mirror.model.__name__}")
 
         return f"{text} ({', '.join(info)})"
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+
+        # The value might be cached in `memory`
+        identifier = hash(instance)
+        return self.memory.get(identifier)
+
+    def __set__(self, instance, value):
+        has_init = instance._has_init
+        if self.set_by_database and has_init:
+            raise SetByDatabase(self.model, self)
+
+        identifier = hash(instance)
+        primary = instance._primary_values
+        if not any(isinstance(value, Field) for value in primary):
+            mapper = instance._database.id_mapper
+            mapper.set(type(instance), primary, instance)
+
+        if has_init:
+            self._database.update_instance(instance, self, value, propagate=False)
+        self.memory[identifier] = value
 
     @property
     def set_by_database(self):

@@ -112,7 +112,7 @@ class TestSelect(BaseTest):
 
     def test_contains(self):
         """Test the contains filter."""
-        results = Book.select(Book.title.contains("Le"))
+        results = list(Book.select(Book.title.contains("Le")))
         self.assertNotIn(self.balloon, results)
         self.assertNotIn(self.carol, results)
         self.assertIn(self.miserables, results)

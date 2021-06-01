@@ -100,7 +100,7 @@ class Query:
                     results[i] = instance
                     continue
 
-            instance = self.model(**instance)
+            instance = self.model(**data)
             if id_mapper:
                 id_mapper.set(self.model, primary, instance)
             results[i] = instance

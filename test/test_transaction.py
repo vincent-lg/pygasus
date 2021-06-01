@@ -99,6 +99,7 @@ class TestTransactions(BaseTest):
 
         # There should have been a rollback, so the price
         # shouldn't have changed.
+        self.assertEqual(product.price, 3)
         product = Product.get(id=product_id)
         self.assertEqual(product.price, 3)
 

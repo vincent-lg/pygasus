@@ -389,9 +389,8 @@ class Sqlite3Engine(BaseEngine):
         fields = fields if fields is not None else ()
         try:
             result = self.cursor.execute(query, fields)
-        except Exception:
-            print(query)
-            raise
+        except Exception as err:
+            raise RuntimeError(f"{err}: {query}, {fields}")
 
         return result
 

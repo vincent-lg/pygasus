@@ -38,6 +38,7 @@ from pygasus.query.query import Query
 from pygasus.schema.field import Field
 from pygasus.schema.mapper import IDMapper
 from pygasus.schema.model import Model, MODELS
+from pygasus.schema.schema import ModelSchema
 from pygasus.schema.transaction import Transaction
 
 class Database:
@@ -110,8 +111,8 @@ class Database:
 
         # Check that all models equire no external bound models.
         for cls in models:
-            cls._fields = cls.get_fields(cls, names)
-            cls.load_schema()
+            fields = cls.get_fields(cls, names)
+            cls.load_schema(fields)
             cls._database = self
             cls._engine = self._engine
 
@@ -155,7 +156,7 @@ class Database:
 
     # Interactions between models and generic tables:
     def create_instance(self, model: Type[Model],
-            fields: Dict[Field, Any]) -> Model:
+            schema: ModelSchema) -> Model:
         """
         Create an instance of a model.
 
@@ -163,33 +164,31 @@ class Database:
 
         Args:
             model (subclass of Model): the model class.
-            fields (dict): the fields to create, as a dictionary,
-                    containing `{field object: value}`.
+            schema (ModelSchema): the full bound schema.
 
         Returns:
             instance (Model): the model instance.
 
         """
         table = model._generic
-        columns = table.prepare_columns(dict(fields))
+        columns = table.prepare_columns(schema.fields_with_values)
         data = self._engine.insert_row(table, columns)
 
         # Normalizes data.
         for key, value in tuple(data.items()):
-            if key not in model._fields:
+            if key not in model._schema.fields.keys():
                 data.pop(key)
+            else:
+                schema.values[key] = value
 
-        for field, value in fields.items():
-            data[field.name] = value
-
-        instance = model(**data)
+        instance = model(**schema.values)
         if self.id_mapper:
             self.id_mapper.set(model, instance._primary_values, instance)
 
         return instance
 
     def get_instance(self, model: Type[Model],
-            fields: Dict[Field, Any]) -> Optional[Model]:
+            schema: ModelSchema) -> Optional[Model]:
         """
         Fetch a model from the database.
 
@@ -201,15 +200,15 @@ class Database:
 
         Args:
             model (subclass of Model): the model class.
-            fields (dict): the fields to query as a dictionary,
-                    containing `{field object: value}`.
+            schema (ModelSchema): the bound and partial schema.
 
         Returns:
             instance (Model): the model instance or None.
 
         """
         table = model._generic
-        columns = table.prepare_columns(fields, search_outside=True)
+        columns = table.prepare_columns(schema.fields_with_values,
+                search_outside=True)
         data = self._engine.get_row(table, columns)
         if data is None:
             return None
@@ -236,7 +235,7 @@ class Database:
             filters (dict): queries on fields.
 
         Returns:
-            combied (Query): the combined query to be executed.
+            combined (Query): the combined query to be executed.
 
         """
         query.model = model
@@ -258,14 +257,12 @@ class Database:
         transaction = self._current_transaction
         if transaction:
             if instance not in transaction.objects:
-                attrs = {field.name: getattr(instance, field.name)
-                        for field in instance._fields.values()}
-                transaction.objects[instance] = attrs
+                schema = instance._schema.bind_from(instance)
+                transaction.objects[instance] = dict(schema.values)
         table = type(instance)._generic
-        columns = table.prepare_columns({field: value})
-        primary = {field.name: getattr(instance, field.name)
-                for field in type(instance)._fields.values()
-                if field.primary_key}
+        partial = instance._schema.bind((), {field.name: value}, full=False)
+        columns = table.prepare_columns(partial.fields_with_values)
+        primary = instance._schema.primary_names
         for column, col_value in columns.items():
             self._engine.update_row(table, primary, column, col_value)
         if propagate:
@@ -284,25 +281,9 @@ class Database:
         transaction = self._current_transaction
         if transaction:
             if instance not in transaction.objects:
-                attrs = {field.name: getattr(instance, field.name)
-                        for field in instance._fields.values()}
-                transaction.objects[instance] = attrs
+                schema = instance._schema.bind_from(instance)
+                transaction.objects[instance] = dict(schema.values)
         table = type(instance)._generic
-        primary = {field.name: getattr(instance, field.name)
-                for field in type(instance)._fields.values()
-                if field.primary_key}
+        primary = instance._schema.primary_names
         self._engine.delete_row(table, primary)
         instance._has_init = False
-
-    def _get_columns(self, table: GenericTable,
-            fields: Dict[Field, Any]) -> Dict[BaseColumn, Any]:
-        """Return the column and their values."""
-        columns = {}
-        for key, value in fields.items():
-            column = table.columns.get(key)
-            if column is None:
-                continue
-
-            columns[column] = value
-
-        return columns

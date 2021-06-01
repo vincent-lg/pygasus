@@ -106,5 +106,10 @@ class TestOne2One(BaseTest):
         carol = Book.create(title="A Christmas Carol", author=dickens, year=1843)
         self.assertIs(carol.author, dickens)
         self.assertIs(dickens.book, carol)
+
+        # Clear the ID mapper.
+        self.db.id_mapper.clear()
+        carol = Book.get(id=carol.id)
+        dickens = Author.get(id=dickens.id)
         self.assertIs(Book.get(author=dickens), carol)
         self.assertIs(Author.get(book=carol), dickens)
