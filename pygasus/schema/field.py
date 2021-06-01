@@ -55,11 +55,6 @@ class Field(Query):
     def __hash__(self):
         return hash(self.name)
 
-    def __eq__(self, other):
-        if isinstance(other, Field):
-            return hash(self) == hash(other)
-        return super().__eq__(other)
-
     def __repr__(self):
         return f"<Field {self.name!r}>"
 
@@ -128,11 +123,9 @@ class HasOne(Field):
     """Wrapper around a field, linked to one."""
 
     def __init__(self, field):
+        super().__init__(field.field_type, primary_key=field.primary_key,
+                name=field.name, default=field.default)
         self.field = field
-        self.field_type = field.field_type
-        self.primary_key = field.primary_key
-        self.name = field.name
-        self.default = field.default
         self.model = field.model
         self.store_sequence = False
         self.mirror = field.mirror

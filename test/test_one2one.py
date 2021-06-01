@@ -113,3 +113,22 @@ class TestOne2One(BaseTest):
         dickens = Author.get(id=dickens.id)
         self.assertIs(Book.get(author=dickens), carol)
         self.assertIs(Author.get(book=carol), dickens)
+
+    def test_select(self):
+        """Test to select the relevant objects from a relation."""
+        dickens = Author.create(first_name="Charles", last_name="Dickens",
+                born_in=1812)
+        carol = Book.create(title="A Christmas Carol", author=dickens, year=1843)
+        london = Author.create(first_name="Jack", last_name="London",
+                born_in=1876)
+        bellew = Book.create(title="Smoke Bellew",
+                author=london, year=1912)
+        self.assertIs(carol.author, dickens)
+        self.assertIs(dickens.book, carol)
+        self.assertIs(bellew.author, london)
+        self.assertIs(london.book, bellew)
+
+        # Select books and authors.
+        results = list(Book.select(Book.author == london))
+        self.assertIn(bellew, results)
+        self.assertNotIn(carol, results)

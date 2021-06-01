@@ -71,7 +71,10 @@ class QueryWalker:
                 self.decode(argument)
         elif isinstance(operation, Unary):
             if operation is Unary.RETRIEVE:
-                self.sql_statement += query.name
+                columns = query.model._generic.prepare_columns(
+                        {query: None}, search_outside=True)
+                self.sql_statement += ",".join([col.name
+                        for col in columns.keys()])
         elif isinstance(operation, Function):
             self.sql_statement += f"{sql_operation}("
             if query.arguments:
@@ -83,4 +86,5 @@ class QueryWalker:
             self.sql_statement += ")"
         else:
             self.sql_statement += "?"
-            self.sql_values.append(query)
+            primary = getattr(query, "_primary_values", (query, ))[0]
+            self.sql_values.append(primary)
