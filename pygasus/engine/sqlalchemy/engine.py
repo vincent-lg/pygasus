@@ -69,6 +69,7 @@ class SQLAlchemyEngine(BaseEngine):
         self.memory = False
         self.savepoints = {}
         self.savepoint_id = count(1)
+        self.transaction = None
 
     def init(self, file_name: Union[str, pathlib.Path, None] = None,
             memory: bool = False):
@@ -326,13 +327,7 @@ class SQLAlchemyEngine(BaseEngine):
             transaction: the transacrion to begin.
 
         """
-        if transaction.parent:
-            t_id = next(self.savepoint_id)
-            savepoint = f"sp{t_id}"
-            self.savepoints[transaction] = t_id
-            self._execute(f"SAVEPOINT {savepoint};")
-        else:
-            self._execute("BEGIN TRANSACTION;")
+        self.transaction = self.connection.begin()
 
     def commit_transaction(self, transaction: Transaction):
         """
@@ -342,12 +337,8 @@ class SQLAlchemyEngine(BaseEngine):
             transaction: the transacrion to commit.
 
         """
-        if transaction.parent:
-            t_id = self.savepoints.pop(transaction)
-            savepoint = f"sp{t_id}"
-            self._execute(f"RELEASE SAVEPOINT {savepoint};")
-        else:
-            self._execute("COMMIT;")
+        if self.transaction:
+            self.transaction.commit()
 
     def rollback_transaction(self, transaction: Transaction):
         """
@@ -357,12 +348,8 @@ class SQLAlchemyEngine(BaseEngine):
             transaction: the transacrion to rollback.
 
         """
-        if transaction.parent:
-            t_id = self.savepoints.pop(transaction)
-            savepoint = f"sp{t_id}"
-            self._execute(f"ROLLBACK TRANSACTION TO SAVEPOINT {savepoint};")
-        else:
-            self._execute("ROLLBACK;")
+        if self.transaction:
+            self.transaction.rollback()
 
     def _execute(self, query, fields=None):
         """Execute a query."""
