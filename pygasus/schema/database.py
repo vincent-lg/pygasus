@@ -33,7 +33,7 @@ from typing import Any, Dict, Optional, Sequence, Type, Union
 from pygasus.engine.base import BaseEngine
 from pygasus.engine.generic.columns.base import BaseColumn
 from pygasus.engine.generic.table import GenericTable
-from pygasus.engine.sqlite import Sqlite3Engine
+from pygasus.engine.sqlalchemy import SQLAlchemyEngine
 from pygasus.query.query import Query
 from pygasus.schema.field import Field
 from pygasus.schema.mapper import IDMapper
@@ -57,7 +57,7 @@ class Database:
     """
 
     def __init__(self):
-        self._engine = Sqlite3Engine(self)
+        self._engine = SQLAlchemyEngine(self)
         self._models = {}
         self._current_transaction = None
         self.id_mapper = IDMapper(self)

@@ -132,3 +132,6 @@ class TestOne2One(BaseTest):
         results = list(Book.select(Book.author == london))
         self.assertIn(bellew, results)
         self.assertNotIn(carol, results)
+        results = list(Author.select(Author.book == bellew))
+        self.assertIn(london, results)
+        self.assertNotIn(dickens, results)

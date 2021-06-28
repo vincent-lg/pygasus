@@ -165,7 +165,7 @@ class ModelSchema:
         fields = iter(self.fields.values())
         for arg in args:
             field = None
-            while field is None and (not field.has_default or field.set_by_database):
+            while field is None or (not field.has_default or field.set_by_database):
                 try:
                     field = next(fields)
                 except StopIteration:
