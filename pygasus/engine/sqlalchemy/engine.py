@@ -43,7 +43,9 @@ from pygasus.schema.transaction import Transaction
 
 # Try to import SQLAlchemy.
 try:
-    from sqlalchemy import create_engine, Column, ForeignKey, MetaData, Table
+    from sqlalchemy import (
+            create_engine, event, Column, ForeignKey, MetaData, Table
+    )
     from sqlalchemy.sql import select
 except ModuleNotFoundError:
     raise ModuleNotFoundError("SQLAlchemy is not installed")
@@ -100,6 +102,11 @@ class SQLAlchemyEngine(BaseEngine):
                 sql_file_name = str(file_name.resolve())
             self.file_name = file_name
         self.engine = create_engine(f"sqlite:///{sql_file_name}")
+
+        @event.listens_for(self.engine, "connect")
+        def setup_lower(dbapi_connection, conn_rec):
+            dbapi_connection.create_function("pylower", 1, str.lower)
+
         self.connection = self.engine.connect()
         self.metadata = MetaData()
         self.tables = {}
@@ -280,15 +287,17 @@ class SQLAlchemyEngine(BaseEngine):
         model layer.
 
         """
-        sql_filters = []
-        sql_values = [value]
-        for key, value in primary_keys.items():
-            sql_filters.append(f"{key}=?")
-            sql_values.append(value)
+        sql_table = self.tables[table.name]
+        sql_primary_keys = []
+        for primary, p_value in primary_keys.items():
+            sql_primary_keys.append(getattr(sql_table.c,
+                    primary) == p_value)
 
-        sql_filters = " AND ".join(sql_filters)
-        self._execute(UPDATE_QUERY.format(table_name=table.name,
-                filters=sql_filters, column=column.name), sql_values)
+        # Send the query.
+        sql_columns = {column.name: value}
+        update = sql_table.update().where(*sql_primary_keys).values(
+                **sql_columns)
+        self.connection.execute(update)
 
     def delete_row(self, table: GenericTable, primary_keys: Dict[str, Any]):
         """
@@ -299,15 +308,15 @@ class SQLAlchemyEngine(BaseEngine):
             primary_keys (dict): the dictionary of primary keys.
 
         """
-        sql_filters = []
-        sql_values = []
-        for key, value in primary_keys.items():
-            sql_filters.append(f"{key}=?")
-            sql_values.append(value)
+        sql_table = self.tables[table.name]
+        sql_primary_keys = []
+        for primary, p_value in primary_keys.items():
+            sql_primary_keys.append(getattr(sql_table.c,
+                    primary) == p_value)
 
-        sql_filters = " AND ".join(sql_filters)
-        self._execute(DELETE_QUERY.format(table_name=table.name,
-                filters=sql_filters), sql_values)
+        # Send the query.
+        delete = sql_table.delete().where(*sql_primary_keys)
+        self.connection.execute(delete)
 
     def begin_transaction(self, transaction: Transaction):
         """
