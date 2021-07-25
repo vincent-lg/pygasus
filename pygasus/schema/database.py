@@ -146,6 +146,9 @@ class Database:
                 if diff is not None:
                     self._engine.apply_diff_for(cls, diff)
 
+        # Call post-init hooks if necessary.
+        self._engine.run_after_table_creation()
+
     def close(self):
         """Close the database."""
         return self._engine.close()

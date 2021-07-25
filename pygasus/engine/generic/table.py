@@ -160,4 +160,5 @@ class GenericTable:
         for field in model._schema.fields.values():
             generic.generate_column_from_field(field, database)
 
+        model._table = generic
         return generic

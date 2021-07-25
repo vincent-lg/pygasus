@@ -70,7 +70,7 @@ class TestSelect(BaseTest):
     def test_equal(self):
         """Test the select operation."""
         # Select by title.
-        results = Book.select(Book.title == "A Voyage in a Balloon")
+        results = list(Book.select(Book.title == "A Voyage in a Balloon"))
         self.assertIn(self.balloon, results)
         self.assertNotIn(self.carol, results)
         self.assertNotIn(self.miserables, results)
@@ -80,7 +80,7 @@ class TestSelect(BaseTest):
         self.assertNotIn(self.eternity, results)
 
         # Query by year.
-        results = Book.select(Book.year == 1862)
+        results = list(Book.select(Book.year == 1862))
         self.assertNotIn(self.balloon, results)
         self.assertNotIn(self.carol, results)
         self.assertIn(self.miserables, results)
@@ -91,7 +91,7 @@ class TestSelect(BaseTest):
 
     def test_lower(self):
         """Test to lowercase fields."""
-        results = Book.select(Book.title.lower() == "a voyage in a balloon")
+        results = list(Book.select(Book.title.lower() == "a voyage in a balloon"))
         self.assertIn(self.balloon, results)
         self.assertNotIn(self.carol, results)
         self.assertNotIn(self.miserables, results)
@@ -101,7 +101,7 @@ class TestSelect(BaseTest):
         self.assertNotIn(self.eternity, results)
 
         # Test the unicode lowercase.
-        results = Book.select(Book.title.lower() == "le cap éternité")
+        results = list(Book.select(Book.title.lower() == "le cap éternité"))
         self.assertNotIn(self.balloon, results)
         self.assertNotIn(self.carol, results)
         self.assertNotIn(self.miserables, results)
@@ -122,7 +122,7 @@ class TestSelect(BaseTest):
         self.assertIn(self.eternity, results)
 
         # Combine with lower()
-        results = Book.select(Book.title.lower().contains("le"))
+        results = list(Book.select(Book.title.lower().contains("le")))
         self.assertNotIn(self.balloon, results)
         self.assertNotIn(self.carol, results)
         self.assertIn(self.miserables, results)

@@ -38,6 +38,7 @@ from pygasus.engine.base import BaseEngine
 from pygasus.engine.generic.columns import IntegerColumn, OneToOneColumn
 from pygasus.engine.generic.columns.base import BaseColumn
 from pygasus.engine.generic.table import GenericTable
+from pygasus.engine.sqlalchemy.query import QueryWalker
 from pygasus.schema.field import Field
 from pygasus.schema.transaction import Transaction
 
@@ -46,7 +47,7 @@ try:
     from sqlalchemy import (
             create_engine, event, Column, ForeignKey, MetaData, Table
     )
-    from sqlalchemy.sql import select
+    from sqlalchemy.sql import select, text
 except ModuleNotFoundError:
     raise ModuleNotFoundError("SQLAlchemy is not installed")
 
@@ -70,6 +71,7 @@ class SQLAlchemyEngine(BaseEngine):
         self.savepoints = {}
         self.savepoint_id = count(1)
         self.transaction = None
+        self.printout = False
 
     def init(self, file_name: Union[str, pathlib.Path, None] = None,
             memory: bool = False):
@@ -147,7 +149,7 @@ class SQLAlchemyEngine(BaseEngine):
         for column in table.columns.values():
             if isinstance(column, OneToOneColumn):
                 sql_column = Column(column.name, None, ForeignKey(
-                        f"{column.to_model.table.name}.id"))
+                        f"{column.to_model.__name__.lower()}.id"))
             else:
                 sql_type = SQL_TYPES[type(column)]
                 sql_column = Column(column.name, sql_type,
@@ -159,6 +161,9 @@ class SQLAlchemyEngine(BaseEngine):
         # Create the table object.
         self.tables[table.name] = Table(table.name, self.metadata,
                 *sql_columns)
+
+    def run_after_table_creation(self):
+        """When all the tables have been created."""
         self.metadata.create_all(self.engine)
 
     def get_saved_schema_for(self, table: GenericTable):
@@ -179,32 +184,40 @@ class SQLAlchemyEngine(BaseEngine):
         """
         Return a query object filtered according to the specified arguments.
 
-        Positional arguments should contain query filters, like
-        `Person.name == "Vincent"`.  Keyword arguments should contain
-        direct matches tested on equality, like `first_name="Vincent`).
+        The query object will contain the filters themselves, as a
+        tree of conditions.  Additional filters can also be specified
+        as keyword arguments.
 
-        Hence, here are some examples of ways to call this method:
+        Args:
+            query (Query): the query object, containing the filters.
 
-            engine.select_row(Person.first_name == "Vincent")
-            engine.select_row(Person.age > 21, Person.name.lower() == "lucy")
-            engine.select_row(name="Vincent")
+        More keyword arguments can be sent as additional filters.
+
+        Note:
+            This method EXECUTES the query object and sends it to
+            the database, effectively querying the results.
 
         Returns:
-            The list of rows matching the specified queries.
+            rows (list): The list of rows matching the specified query.
 
         """
-        walker = QueryWalker(query)
-        walker.walk()
-        where = walker.sql_statement
-        sql_values = walker.sql_values
-        columns = self._get_sql_columns(table, sep=",")
+        sql_table = self.tables[table.name]
+        walker = QueryWalker(self, query)
+        where = walker.walk()
+        query = select(sql_table)
+
+        for table in walker.tables:
+            if table is not sql_table:
+                query = query.select_from(sql_table.join(table))
+
+        query = query.where(where)
+
 
         # Send the query.
-        self._execute(SELECT_QUERY.format(table_name=table.name,
-                columns=columns, filters=where, join=""), sql_values)
+        rows = self.connection.execute(query).fetchall()
+        if len(rows) == 0 or len(rows) < 1:
+            return None
 
-        # Return the rows.
-        rows = self.cursor.fetchall()
         return [self._get_dict_of_values(table, row) for row in rows]
 
     def get_row(self, table: GenericTable,
@@ -229,10 +242,18 @@ class SQLAlchemyEngine(BaseEngine):
         sql_table = self.tables[table.name]
         query = select(sql_table)
         where = []
+        tables = set()
         for column, value in columns.items():
-            where.append(getattr(sql_table.c, column.name) == value)
+            matching_table = self.tables[column.table.name]
+            where.append(getattr(matching_table.c, column.name) == value)
+            tables.add(matching_table)
 
         query = query.where(*where)
+
+        # Build required joins if necessary.
+        for other_table in tables:
+            if other_table is not sql_table:
+                query = query.select_from(sql_table.join(other_table))
 
         # Send the query.
         rows = self.connection.execute(query).fetchall()
@@ -326,8 +347,22 @@ class SQLAlchemyEngine(BaseEngine):
         Args:
             transaction: the transacrion to begin.
 
+        Note:
+            SQLAlchemy implements save points and transactions as
+            different concepts.  Pygasus tries to unify both concepts
+            as also does Sqlite: an inner transaction is linked to
+            a savepoint and can be rolled back.  The outer transaction,
+            however, is handled by SQLAlchemy.  To handle inner
+            transactions, Pygasus has to send raw SQL to SQLAlchemy.
+
         """
-        self.transaction = self.connection.begin()
+        if transaction.parent: # This is an inner transaction.
+            t_id = next(self.savepoint_id)
+            savepoint = f"sp{t_id}"
+            self.savepoints[transaction] = t_id
+            self.connection.execute(text(f"SAVEPOINT {savepoint};"))
+        else: # This is an outer transaction.
+            self.transaction = self.connection.begin()
 
     def commit_transaction(self, transaction: Transaction):
         """
@@ -336,9 +371,23 @@ class SQLAlchemyEngine(BaseEngine):
         Args:
             transaction: the transacrion to commit.
 
+        Note:
+            SQLAlchemy implements save points and transactions as
+            different concepts.  Pygasus tries to unify both concepts
+            as also does Sqlite: an inner transaction is linked to
+            a savepoint and can be rolled back.  The outer transaction,
+            however, is handled by SQLAlchemy.  To handle inner
+            transactions, Pygasus has to send raw SQL to SQLAlchemy.
+
         """
-        if self.transaction:
+        if transaction.parent: # This is an inner transaction.
+            t_id = self.savepoints.pop(transaction)
+            savepoint = f"sp{t_id}"
+            self.connection.execute(text(f"RELEASE SAVEPOINT {savepoint};"))
+        else: # This is an outer transaction.
             self.transaction.commit()
+            self.transaction.close()
+            self.transaction = None
 
     def rollback_transaction(self, transaction: Transaction):
         """
@@ -347,31 +396,22 @@ class SQLAlchemyEngine(BaseEngine):
         Args:
             transaction: the transacrion to rollback.
 
+        Note:
+            SQLAlchemy implements save points and transactions as
+            different concepts.  Pygasus tries to unify both concepts
+            as also does Sqlite: an inner transaction is linked to
+            a savepoint and can be rolled back.  The outer transaction,
+            however, is handled by SQLAlchemy.  To handle inner
+            transactions, Pygasus has to send raw SQL to SQLAlchemy.
+
         """
-        if self.transaction:
+        if transaction.parent: # This is an inner transaction.
+            t_id = self.savepoints.pop(transaction)
+            savepoint = f"sp{t_id}"
+            self.connection.execute(text(f"ROLLBACK TRANSACTION TO SAVEPOINT {savepoint};"))
+        else: # This is an outer transaction.
             self.transaction.rollback()
-
-    def _execute(self, query, fields=None):
-        """Execute a query."""
-        fields = fields if fields is not None else ()
-        try:
-            result = self.cursor.execute(query, fields)
-        except Exception as err:
-            raise RuntimeError(f"{err}: {query}, {fields}")
-
-        return result
-
-    def _get_sql_columns(self, table: GenericTable, sep=" ") -> str:
-        """
-        Return the SQL statement containing column names.
-
-        Args:
-            sep (str): the separator to place between columns.
-
-        """
-        names = tuple(f"{col.table.name}.{col.name}"
-                for col in table.columns.values())
-        return sep.join(names)
+            self.transaction = None
 
     def _get_dict_of_values(self, table: GenericTable, row: tuple) -> dict:
         """Get and return the dictionary of values for this table."""

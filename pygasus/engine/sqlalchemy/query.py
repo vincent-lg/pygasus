@@ -26,35 +26,41 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Module containing the Sqlite3 operators."""
+"""Module containing the SQLAlchemy query walker."""
+
+from operator import eq
+
+from sqlalchemy import func
+from sqlalchemy import select
+from sqlalchemy.sql.operators import contains
 
 from pygasus.query.operation import Binary, Function, Unary
 from pygasus.schema.field import Field
 
 OPERATIONS = {
     # Binary operators
-    Binary.EQUAL: "=",
+    Binary.EQUAL: eq,
 
     # Unary operators
     Unary.RETRIEVE: ...,
 
     # Functions
-    Function.CONTAINS: "INSTR",
-    Function.LOWER: "PYLOWER",
+    Function.CONTAINS: func.INSTR,
+    Function.LOWER: func.PYLOWER,
 }
 
 class QueryWalker:
 
     """Query walker, to walk through operators."""
 
-    def __init__(self, query):
+    def __init__(self, engine, query):
+        self.engine = engine
         self.query = query
-        self.sql_statement = ""
-        self.sql_values = []
+        self.tables = set()
 
     def walk(self):
         """Walk through the query."""
-        self.decode(self.query)
+        return self.decode(self.query)
 
     def decode(self, query):
         """Decode and recursively convert to SQL a query."""
@@ -62,29 +68,22 @@ class QueryWalker:
         if operation:
             sql_operation = OPERATIONS[operation]
 
-        if isinstance(operation, Binary):
+        args = []
+        if isinstance(operation, (Binary, Function)):
             first = query.arguments[0]
-            self.decode(first)
+            args.append(self.decode(first))
 
             for argument in query.arguments[1:]:
-                self.sql_statement += sql_operation
-                self.decode(argument)
+                args.append(self.decode(argument))
+            return sql_operation(*args)
         elif isinstance(operation, Unary):
             if operation is Unary.RETRIEVE:
-                columns = query.model._generic.prepare_columns(
-                        {query: None}, search_outside=True)
-                self.sql_statement += ",".join([col.name
-                        for col in columns.keys()])
-        elif isinstance(operation, Function):
-            self.sql_statement += f"{sql_operation}("
-            if query.arguments:
-                self.decode(query.arguments[0])
-
-                for argument in query.arguments[1:]:
-                    self.sql_statement += ","
-                    self.decode(argument)
-            self.sql_statement += ")"
+                field = query.arguments[0]
+                column = field.column
+                sql_table = self.engine.tables[column.table.name]
+                self.tables.add(sql_table)
+                sql_column = getattr(sql_table.c, column.name)
+                return sql_column
         else:
-            self.sql_statement += "?"
             primary = getattr(query, "_primary_values", (query, ))[0]
-            self.sql_values.append(primary)
+            return primary

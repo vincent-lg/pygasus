@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pygasus",
-    version="0.3",
+    version="0.4",
     author="Vincent Le Goff",
     author_email="vincent.legoff.srs@gmail.com",
     description="A lightweight, Sqlite ORM in Python.",
@@ -14,7 +14,9 @@ setuptools.setup(
     url="https://github.com/vincent-lg/pygasus/",
     packages=setuptools.find_packages(),
     python_requires=">=3.6",
-    install_requires = [],
+    install_requires = [
+        "SQLAlchemy==1.4.22",
+    ],
     classifiers=[
         "Development Status :: 1 - Planning",
         "Intended Audience :: Developers",

@@ -43,6 +43,7 @@ class OneToOneColumn(BaseColumn):
         self.from_field = from_field
         self.to_field = to_field
         self.primary = primary
+        to_field.column = self
 
     def retrieve_additional_columns(self, fields):
         """Return additional columns for this column type."""

@@ -221,6 +221,7 @@ class Model(metaclass=MetaModel):
     _alt_name: Optional[str] = None
     _database: Optional['pygasus.schema.database.Database'] = None
     _engine: Optional['pygasus.engine.base.BaseEngine'] = None
+    _table = None
 
     def __init__(self, **kwargs):
         self._has_init = False

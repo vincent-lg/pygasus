@@ -51,6 +51,7 @@ class Field(Query):
         self.store_sequence = False
         self.mirror = None
         self.memory = {}
+        self.column = None
 
     def __hash__(self):
         return hash(self.name)

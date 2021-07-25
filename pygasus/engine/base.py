@@ -92,6 +92,9 @@ class BaseEngine(metaclass=ABCMeta):
 
         """
 
+    def run_after_table_creation(self):
+        """When all the tables have been created."""
+
     @abstractmethod
     def get_saved_schema_for(self, table: GenericTable):
         """
@@ -132,18 +135,21 @@ class BaseEngine(metaclass=ABCMeta):
         """
         Return a query object filtered according to the specified arguments.
 
-        Positional arguments should contain query filters, like
-        `Person.name == "Vincent"`.  Keyword arguments should contain
-        direct matches tested on equality, like `first_name="Vincent`).
+        The query object will contain the filters themselves, as a
+        tree of conditions.  Additional filters can also be specified
+        as keyword arguments.
 
-        Hence, here are some examples of ways to call this method:
+        Args:
+            query (Query): the query object, containing the filters.
 
-            engine.select_row(Person.first_name == "Vincent")
-            engine.select_row(Person.age > 21, Person.name.lower() == "lucy")
-            engine.select_row(name="Vincent")
+        More keyword arguments can be sent as additional filters.
+
+        Note:
+            This method EXECUTES the query object and sends it to
+            the database, effectively querying the results.
 
         Returns:
-            The list of rows matching the specified queries.
+            rows (list): The list of rows matching the specified query.
 
         """
 
